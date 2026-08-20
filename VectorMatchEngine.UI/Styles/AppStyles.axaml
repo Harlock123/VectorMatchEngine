@@ -1,0 +1,118 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Primary action button -->
+  <Style Selector="Button.primary">
+    <Setter Property="Background" Value="{DynamicResource AppAccent}"/>
+    <Setter Property="Foreground" Value="White"/>
+    <Setter Property="CornerRadius" Value="6"/>
+    <Setter Property="Padding" Value="12,6"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Cursor" Value="Hand"/>
+  </Style>
+  <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="#6FAAE0"/>
+    <Setter Property="TextElement.Foreground" Value="White"/>
+  </Style>
+  <Style Selector="Button.primary:disabled /template/ ContentPresenter">
+    <Setter Property="Background" Value="#3C4A5E"/>
+    <Setter Property="TextElement.Foreground" Value="#8A93A8"/>
+  </Style>
+
+  <!-- Secondary / back button -->
+  <Style Selector="Button.secondary">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppSubtext}"/>
+    <Setter Property="BorderBrush" Value="#44465A"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="6"/>
+    <Setter Property="Padding" Value="12,6"/>
+    <Setter Property="Cursor" Value="Hand"/>
+  </Style>
+  <Style Selector="Button.secondary:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="#32334A"/>
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource AppText}"/>
+  </Style>
+
+  <!-- Destructive button -->
+  <Style Selector="Button.danger">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppError}"/>
+    <Setter Property="BorderBrush" Value="#5A3245"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="6"/>
+    <Setter Property="Padding" Value="8,4"/>
+    <Setter Property="Cursor" Value="Hand"/>
+  </Style>
+  <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="#4A2437"/>
+  </Style>
+
+  <!-- Card / panel surface -->
+  <Style Selector="Border.card">
+    <Setter Property="Background" Value="{DynamicResource AppSurface}"/>
+    <Setter Property="CornerRadius" Value="10"/>
+    <Setter Property="Padding" Value="20"/>
+  </Style>
+
+  <!-- Typography -->
+  <Style Selector="TextBlock.h1">
+    <Setter Property="Foreground" Value="{DynamicResource AppText}"/>
+    <Setter Property="FontSize" Value="26"/>
+    <Setter Property="FontWeight" Value="Bold"/>
+  </Style>
+  <Style Selector="TextBlock.h2">
+    <Setter Property="Foreground" Value="{DynamicResource AppText}"/>
+    <Setter Property="FontSize" Value="18"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+  </Style>
+  <Style Selector="TextBlock.body">
+    <Setter Property="Foreground" Value="{DynamicResource AppText}"/>
+  </Style>
+  <Style Selector="TextBlock.subtle">
+    <Setter Property="Foreground" Value="{DynamicResource AppSubtext}"/>
+    <Setter Property="FontSize" Value="12"/>
+  </Style>
+  <Style Selector="TextBlock.error">
+    <Setter Property="Foreground" Value="{DynamicResource AppError}"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+  </Style>
+  <Style Selector="TextBlock.success">
+    <Setter Property="Foreground" Value="{DynamicResource AppSuccess}"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+  </Style>
+
+  <Style Selector="ProgressBar">
+    <Setter Property="Foreground" Value="{DynamicResource AppAccent}"/>
+  </Style>
+
+  <!-- DataGrid -->
+  <Style Selector="DataGrid">
+    <Setter Property="RowBackground" Value="#1E1E2E"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppText}"/>
+    <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+    <Setter Property="HorizontalGridLinesBrush" Value="#33354A"/>
+    <Setter Property="BorderBrush" Value="#33354A"/>
+    <Setter Property="BorderThickness" Value="1"/>
+  </Style>
+  <!-- Avalonia's DataGrid has no AlternatingRowBackground (that is a WPF property),
+       so the alternating stripe is done with an nth-child row selector. -->
+  <Style Selector="DataGridRow:nth-child(2n)">
+    <Setter Property="Background" Value="#252535"/>
+  </Style>
+
+  <Style Selector="DataGridColumnHeader">
+    <Setter Property="Background" Value="{DynamicResource AppGridHeader}"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppText}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Padding" Value="8,6"/>
+  </Style>
+  <Style Selector="DataGridCell">
+    <Setter Property="Foreground" Value="{DynamicResource AppText}"/>
+    <Setter Property="Padding" Value="8,4"/>
+  </Style>
+
+  <Style Selector="TextBox">
+    <Setter Property="CornerRadius" Value="6"/>
+  </Style>
+</Styles>

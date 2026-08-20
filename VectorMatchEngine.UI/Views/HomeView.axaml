@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:VectorMatchEngine.UI.ViewModels"
+             x:Class="VectorMatchEngine.UI.Views.HomeView"
+             x:DataType="vm:HomeViewModel">
+  <Grid Background="{StaticResource AppBackground}" Margin="16" RowDefinitions="Auto,Auto,*,Auto">
+
+    <!-- Title bar with settings gear -->
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,8,0,24">
+      <StackPanel Grid.Column="0" Spacing="4">
+        <TextBlock Classes="h1" Text="&#x1F517; Vector Match Engine"/>
+        <TextBlock Classes="subtle" Text="Vectorize Excel data, then match records across datasets by similarity."/>
+      </StackPanel>
+      <Button Grid.Column="1" Classes="secondary" Command="{Binding GoSettingsCommand}"
+              ToolTip.Tip="Settings" FontSize="18" Content="&#x2699;"
+              VerticalAlignment="Top" Padding="10,6"/>
+    </Grid>
+
+    <!-- Stat cards -->
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="16" Margin="0,0,0,28">
+      <Border Classes="card" Width="220">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="subtle" Text="DATASETS"/>
+          <TextBlock Classes="body" FontSize="34" FontWeight="Bold"
+                     Text="{Binding DatasetCount}"/>
+        </StackPanel>
+      </Border>
+      <Border Classes="card" Width="220">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="subtle" Text="MATCH JOBS"/>
+          <TextBlock Classes="body" FontSize="34" FontWeight="Bold"
+                     Text="{Binding MatchJobCount}"/>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
+    <!-- Actions -->
+    <StackPanel Grid.Row="2" Spacing="14" HorizontalAlignment="Left">
+      <TextBlock Classes="h2" Text="Get started"/>
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Button Classes="primary" Width="210" Content="&#x1F4E5;  Import Dataset"
+                Command="{Binding GoImportCommand}"/>
+        <Button Classes="secondary" Width="210" Content="&#x1F4CB;  View Datasets"
+                Command="{Binding GoDatasetsCommand}"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Button Classes="primary" Width="210" Content="&#x1F50D;  New Match Job"
+                Command="{Binding GoNewMatchJobCommand}"/>
+        <Button Classes="secondary" Width="210" Content="&#x1F4CA;  View Match Jobs"
+                Command="{Binding GoMatchJobsCommand}"/>
+      </StackPanel>
+    </StackPanel>
+
+    <TextBlock Grid.Row="3" Classes="error" Text="{Binding ErrorMessage}"
+               IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+  </Grid>
+</UserControl>

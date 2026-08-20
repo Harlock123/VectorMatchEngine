@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML" Version="3.*" />
+    <PackageReference Include="ClosedXML" Version="0.102.*" />
+    <PackageReference Include="MathNet.Numerics" Version="5.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.*" />
+  </ItemGroup>
+</Project>

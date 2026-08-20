@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:VectorMatchEngine.UI.ViewModels"
+             xmlns:conv="using:VectorMatchEngine.UI.Converters"
+             x:Class="VectorMatchEngine.UI.Views.DatasetsView"
+             x:DataType="vm:DatasetsViewModel">
+  <Grid Background="{StaticResource AppBackground}" Margin="16" RowDefinitions="Auto,Auto,*,Auto">
+
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,8,0,16">
+      <StackPanel Grid.Column="0" Spacing="4">
+        <TextBlock Classes="h1" Text="Datasets"/>
+        <TextBlock Classes="subtle" Text="Every workbook that has been vectorized and stored."/>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Top">
+        <Button Classes="secondary" Content="Refresh" Command="{Binding RefreshCommand}"/>
+        <Button Classes="primary" Content="Import New" Command="{Binding GoImportCommand}"/>
+      </StackPanel>
+    </Grid>
+
+    <StackPanel Grid.Row="1" Spacing="8" Margin="0,0,0,10">
+      <ProgressBar IsIndeterminate="True" Height="4" IsVisible="{Binding IsLoading}"/>
+      <TextBlock Classes="error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}"/>
+    </StackPanel>
+
+    <Border Grid.Row="2" Classes="card" Padding="0">
+      <Panel>
+        <DataGrid ItemsSource="{Binding Datasets}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  CanUserReorderColumns="False"
+                  HeadersVisibility="Column">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="180"/>
+            <DataGridTextColumn Header="File" Binding="{Binding FileName}" Width="180"/>
+            <DataGridTextColumn Header="Rows" Binding="{Binding RowCount, StringFormat='{}{0:N0}'}" Width="90"/>
+            <DataGridTextColumn Header="Dims" Binding="{Binding VectorDimensions}" Width="70"/>
+            <DataGridTextColumn Header="Vectorized Columns" Width="220"
+                                Binding="{Binding VectorizedColumnsDisplay,
+                                          Converter={x:Static conv:TruncateConverter.Instance}}"/>
+            <DataGridTextColumn Header="Preserved Columns" Width="220"
+                                Binding="{Binding PreservedColumnsDisplay,
+                                          Converter={x:Static conv:TruncateConverter.Instance}}"/>
+            <DataGridTextColumn Header="Created" Width="150"
+                                Binding="{Binding CreatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}"/>
+            <DataGridTemplateColumn Header="" Width="70">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate DataType="{x:Type vm:DatasetsViewModel}">
+                  <Button Classes="danger" Content="&#x2715;" ToolTip.Tip="Delete dataset"
+                          HorizontalAlignment="Center"
+                          Command="{Binding $parent[DataGrid].((vm:DatasetsViewModel)DataContext).DeleteDatasetCommand}"
+                          CommandParameter="{Binding}"/>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
+          </DataGrid.Columns>
+        </DataGrid>
+
+        <TextBlock Classes="subtle" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   IsVisible="{Binding IsEmpty}"
+                   Text="No datasets yet. Import an Excel workbook to get started."/>
+      </Panel>
+    </Border>
+
+    <Button Grid.Row="3" Classes="secondary" Content="&#x2190;  Back" Margin="0,14,0,0"
+            HorizontalAlignment="Left" Command="{Binding GoHomeCommand}"/>
+  </Grid>
+</UserControl>

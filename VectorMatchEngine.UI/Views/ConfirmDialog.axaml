@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="VectorMatchEngine.UI.Views.ConfirmDialog"
+        Title="{Binding Title}"
+        Width="440" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        ShowInTaskbar="False"
+        Background="{StaticResource AppBackground}">
+  <StackPanel Margin="24" Spacing="18">
+    <TextBlock Classes="h2" Text="{Binding Title}"/>
+    <TextBlock Classes="body" Text="{Binding Message}" TextWrapping="Wrap"/>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+      <Button Classes="secondary" Content="Cancel" Click="OnCancel" IsCancel="True"/>
+      <Button Classes="primary" Content="{Binding ConfirmText}" Click="OnConfirm" IsDefault="True"/>
+    </StackPanel>
+  </StackPanel>
+</Window>

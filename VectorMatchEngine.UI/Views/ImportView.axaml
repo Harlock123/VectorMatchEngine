@@ -1,0 +1,102 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:VectorMatchEngine.UI.ViewModels"
+             x:Class="VectorMatchEngine.UI.Views.ImportView"
+             x:DataType="vm:ImportViewModel">
+  <Grid Background="{StaticResource AppBackground}" Margin="16" RowDefinitions="Auto,*,Auto">
+
+    <StackPanel Grid.Row="0" Spacing="4" Margin="0,8,0,20">
+      <TextBlock Classes="h1" Text="Import Dataset"/>
+      <TextBlock Classes="subtle" Text="Step 1: choose a file  &#x2022;  Step 2: configure columns  &#x2022;  Step 3: process"/>
+    </StackPanel>
+
+    <!-- ── Step 1: select file ──────────────────────────────────────── -->
+    <Border Grid.Row="1" Classes="card" VerticalAlignment="Top" MaxWidth="900"
+            HorizontalAlignment="Left" IsVisible="{Binding IsStep1}">
+      <StackPanel Spacing="16">
+        <TextBlock Classes="h2" Text="Select an Excel workbook"/>
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBox Text="{Binding SelectedFilePath}" IsReadOnly="True" MinWidth="620"
+                   Watermark="No file selected"/>
+          <Button Classes="secondary" Content="Browse..." Command="{Binding BrowseFileCommand}"/>
+        </StackPanel>
+        <TextBlock Classes="subtle" Text="The first worksheet is used. Row 1 is treated as the header row."/>
+
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <Button Classes="primary" Content="Next  &#x2192;" Command="{Binding NextCommand}"/>
+          <ProgressBar IsIndeterminate="True" Width="120" Height="4" VerticalAlignment="Center"
+                       IsVisible="{Binding IsLoadingColumns}"/>
+        </StackPanel>
+
+        <TextBlock Classes="error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}"/>
+      </StackPanel>
+    </Border>
+
+    <!-- ── Step 2: configure columns ────────────────────────────────── -->
+    <Grid Grid.Row="1" IsVisible="{Binding IsStep2}" RowDefinitions="Auto,*,Auto">
+      <Border Grid.Row="0" Classes="card" Margin="0,0,0,12">
+        <StackPanel Spacing="10">
+          <TextBlock Classes="h2" Text="Dataset name"/>
+          <TextBox Text="{Binding DatasetName, Mode=TwoWay}" MaxWidth="480"
+                   HorizontalAlignment="Left" Watermark="e.g. Customers 2026 Q1"/>
+          <TextBlock Classes="subtle" TextWrapping="Wrap"
+                     Text="Vectorize: the column's text is embedded into the similarity vector. Preserve: the value is stored verbatim so it can be shown and exported. A column can be both."/>
+        </StackPanel>
+      </Border>
+
+      <Border Grid.Row="1" Classes="card" Padding="0">
+        <DataGrid ItemsSource="{Binding ColumnSelections}"
+                  AutoGenerateColumns="False"
+                  CanUserReorderColumns="False"
+                  CanUserSortColumns="False"
+                  HeadersVisibility="Column"
+                  GridLinesVisibility="Horizontal">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Column" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
+            <DataGridCheckBoxColumn Header="Vectorize" Binding="{Binding IsVectorized, Mode=TwoWay}" Width="120"/>
+            <DataGridCheckBoxColumn Header="Preserve"  Binding="{Binding IsPreserved,  Mode=TwoWay}" Width="120"/>
+          </DataGrid.Columns>
+        </DataGrid>
+      </Border>
+
+      <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10" Margin="0,14,0,0">
+        <Button Classes="secondary" Content="&#x2190;  Back" Command="{Binding GoBackCommand}"/>
+        <Button Classes="primary" Content="Process Dataset" Command="{Binding ProcessCommand}"/>
+        <TextBlock Classes="subtle" VerticalAlignment="Center"
+                   Text="Select at least one column to vectorize and enter a name."/>
+      </StackPanel>
+    </Grid>
+
+    <!-- ── Step 3: processing / done ────────────────────────────────── -->
+    <Border Grid.Row="1" Classes="card" VerticalAlignment="Top" MaxWidth="900"
+            HorizontalAlignment="Left" IsVisible="{Binding IsStep3}">
+      <StackPanel Spacing="16">
+        <TextBlock Classes="h2" Text="Processing"/>
+
+        <StackPanel Spacing="8" IsVisible="{Binding !IsDone}">
+          <TextBlock Classes="body" Text="{Binding ProgressMessage}"/>
+          <Grid ColumnDefinitions="*,Auto">
+            <ProgressBar Grid.Column="0" Minimum="0" Maximum="100" Height="10"
+                         Value="{Binding ProgressValue}"/>
+            <TextBlock Grid.Column="1" Classes="subtle" Margin="12,0,0,0" VerticalAlignment="Center"
+                       Text="{Binding ProgressValue, StringFormat='{}{0:0}%'}"/>
+          </Grid>
+        </StackPanel>
+
+        <TextBlock Classes="success" FontSize="15" Text="{Binding SuccessSummary}"
+                   IsVisible="{Binding IsDone}"/>
+
+        <TextBlock Classes="error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}"/>
+
+        <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding !IsProcessing}">
+          <Button Classes="primary" Content="View Datasets" Command="{Binding GoToDatasetsCommand}"
+                  IsVisible="{Binding IsDone}"/>
+          <Button Classes="secondary" Content="Import Another" Command="{Binding ImportAnotherCommand}"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <Button Grid.Row="2" Classes="secondary" Content="&#x2190;  Home"
+            HorizontalAlignment="Left" Command="{Binding GoHomeCommand}"/>
+  </Grid>
+</UserControl>

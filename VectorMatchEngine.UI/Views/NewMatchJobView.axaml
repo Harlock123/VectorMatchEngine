@@ -1,0 +1,86 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:VectorMatchEngine.UI.ViewModels"
+             x:Class="VectorMatchEngine.UI.Views.NewMatchJobView"
+             x:DataType="vm:NewMatchJobViewModel">
+  <Grid Background="{StaticResource AppBackground}" Margin="16" RowDefinitions="Auto,*,Auto">
+
+    <StackPanel Grid.Row="0" Spacing="4" Margin="0,8,0,20">
+      <TextBlock Classes="h1" Text="New Match Job"/>
+      <TextBlock Classes="subtle" Text="Compare every record in Dataset A against every record in Dataset B."/>
+    </StackPanel>
+
+    <Border Grid.Row="1" Classes="card" VerticalAlignment="Top" MaxWidth="820" HorizontalAlignment="Left">
+      <StackPanel Spacing="18">
+
+        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto" VerticalAlignment="Center">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="body" Text="Dataset A:"
+                     VerticalAlignment="Center" Margin="0,0,0,10"/>
+          <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,10"
+                    HorizontalAlignment="Stretch"
+                    ItemsSource="{Binding AvailableDatasets}"
+                    SelectedItem="{Binding SelectedDatasetA, Mode=TwoWay}"
+                    PlaceholderText="Select dataset...">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Name}"/>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="body" Text="Dataset B:"
+                     VerticalAlignment="Center"/>
+          <ComboBox Grid.Row="1" Grid.Column="1"
+                    HorizontalAlignment="Stretch"
+                    ItemsSource="{Binding AvailableDatasets}"
+                    SelectedItem="{Binding SelectedDatasetB, Mode=TwoWay}"
+                    PlaceholderText="Select dataset...">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Name}"/>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </Grid>
+
+        <StackPanel Spacing="6">
+          <TextBlock Classes="body" Text="Similarity Threshold"/>
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+            <TextBlock Grid.Column="0" Classes="subtle" Text="0.50" VerticalAlignment="Center"/>
+            <Slider Grid.Column="1" Minimum="0.5" Maximum="1.0" TickFrequency="0.01"
+                    IsSnapToTickEnabled="True" Margin="10,0"
+                    Value="{Binding Threshold, Mode=TwoWay}"/>
+            <TextBlock Grid.Column="2" Classes="subtle" Text="1.00" VerticalAlignment="Center"/>
+            <Border Grid.Column="3" Background="#33354A" CornerRadius="6" Padding="12,4" Margin="14,0,0,0">
+              <TextBlock Classes="body" FontWeight="Bold" Text="{Binding ThresholdDisplay}"/>
+            </Border>
+          </Grid>
+          <TextBlock Classes="subtle" TextWrapping="Wrap"
+                     Text="Only pairs whose cosine similarity is at or above this value are recorded. Lower it if you expect spelling variations."/>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <Button Classes="primary" Content="&#x25B6;  Run Match Job"
+                  Command="{Binding RunMatchJobCommand}"/>
+          <Button Classes="secondary" Content="View Match Jobs" Command="{Binding GoMatchJobsCommand}"/>
+        </StackPanel>
+
+        <StackPanel Spacing="8" IsVisible="{Binding IsRunning}">
+          <Grid ColumnDefinitions="*,Auto">
+            <ProgressBar Grid.Column="0" Minimum="0" Maximum="100" Height="10"
+                         Value="{Binding ProgressValue}"/>
+            <TextBlock Grid.Column="1" Classes="subtle" Margin="12,0,0,0" VerticalAlignment="Center"
+                       Text="{Binding ProgressValue, StringFormat='{}{0}%'}"/>
+          </Grid>
+          <TextBlock Classes="subtle" Text="{Binding StatusMessage}"/>
+        </StackPanel>
+
+        <TextBlock Classes="subtle" Text="{Binding StatusMessage}" IsVisible="{Binding !IsRunning}"/>
+        <TextBlock Classes="error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}"/>
+      </StackPanel>
+    </Border>
+
+    <Button Grid.Row="2" Classes="secondary" Content="&#x2190;  Home"
+            HorizontalAlignment="Left" Command="{Binding GoHomeCommand}"/>
+  </Grid>
+</UserControl>

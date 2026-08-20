@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:VectorMatchEngine.UI.ViewModels"
+             x:Class="VectorMatchEngine.UI.Views.MatchResultsView"
+             x:DataType="vm:MatchResultsViewModel">
+  <Grid Background="{StaticResource AppBackground}" Margin="16" RowDefinitions="Auto,Auto,*,Auto">
+
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,8,0,14">
+      <StackPanel Grid.Column="0" Spacing="4">
+        <TextBlock Classes="h1" Text="Match Results"/>
+        <TextBlock Classes="body" Text="{Binding HeaderText}"/>
+      </StackPanel>
+      <Button Grid.Column="1" Classes="primary" Content="Export Excel"
+              VerticalAlignment="Top" Command="{Binding ExportCommand}"/>
+    </Grid>
+
+    <StackPanel Grid.Row="1" Spacing="8" Margin="0,0,0,10">
+      <ProgressBar IsIndeterminate="True" Height="4"
+                   IsVisible="{Binding IsLoading}"/>
+      <ProgressBar IsIndeterminate="True" Height="4"
+                   IsVisible="{Binding IsExporting}"/>
+      <TextBlock Classes="success" Text="{Binding StatusMessage}" IsVisible="{Binding HasStatus}"/>
+      <TextBlock Classes="error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}"/>
+    </StackPanel>
+
+    <Border Grid.Row="2" Classes="card" Padding="0">
+      <Panel>
+        <!-- Columns are added in code-behind: they depend on which columns each
+             dataset preserved, which is not known until the job loads. -->
+        <DataGrid Name="ResultsGrid"
+                  ItemsSource="{Binding GridRows}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  CanUserReorderColumns="False"
+                  HeadersVisibility="Column"
+                  HorizontalScrollBarVisibility="Auto"/>
+
+        <TextBlock Classes="subtle" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   IsVisible="{Binding IsEmpty}"
+                   Text="No matched pairs to display."/>
+      </Panel>
+    </Border>
+
+    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="10" Margin="0,14,0,0">
+      <Button Classes="secondary" Content="&#x2190;  Back" Command="{Binding GoBackCommand}"/>
+      <Button Classes="secondary" Content="Home" Command="{Binding GoHomeCommand}"/>
+    </StackPanel>
+  </Grid>
+</UserControl>

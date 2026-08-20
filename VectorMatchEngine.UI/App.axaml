@@ -1,0 +1,21 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="VectorMatchEngine.UI.App"
+             RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <SolidColorBrush x:Key="AppBackground"  Color="#1E1E2E"/>
+    <SolidColorBrush x:Key="AppSurface"     Color="#2A2A3E"/>
+    <SolidColorBrush x:Key="AppAccent"      Color="#5B9BD5"/>
+    <SolidColorBrush x:Key="AppText"        Color="#CDD6F4"/>
+    <SolidColorBrush x:Key="AppSubtext"     Color="#BAC2D9"/>
+    <SolidColorBrush x:Key="AppSuccess"     Color="#A6E3A1"/>
+    <SolidColorBrush x:Key="AppError"       Color="#F38BA8"/>
+    <SolidColorBrush x:Key="AppRowAlt"      Color="#252535"/>
+    <SolidColorBrush x:Key="AppGridHeader"  Color="#333350"/>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme />
+    <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
+    <StyleInclude Source="avares://VectorMatchEngine.UI/Styles/AppStyles.axaml"/>
+  </Application.Styles>
+</Application>

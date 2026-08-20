@@ -1,0 +1,31 @@
+## .NET build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+
+## Rider / JetBrains
+.idea/
+*.sln.iml
+
+## Visual Studio / VS Code
+.vs/
+.vscode/
+*.userprefs
+
+## OS noise
+.DS_Store
+Thumbs.db
+
+## NuGet
+*.nupkg
+packages/
+.nuget/
+
+## Local settings — the app writes its connection string to the OS app-data
+## directory, not the repo, but never commit a connection string if that changes.
+appsettings.Local.json
+settings.json

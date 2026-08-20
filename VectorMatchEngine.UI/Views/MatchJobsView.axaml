@@ -1,0 +1,68 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:VectorMatchEngine.UI.ViewModels"
+             x:Class="VectorMatchEngine.UI.Views.MatchJobsView"
+             x:DataType="vm:MatchJobsViewModel">
+  <Grid Background="{StaticResource AppBackground}" Margin="16" RowDefinitions="Auto,Auto,*,Auto">
+
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,8,0,16">
+      <StackPanel Grid.Column="0" Spacing="4">
+        <TextBlock Classes="h1" Text="Match Jobs"/>
+        <TextBlock Classes="subtle" Text="Every similarity run, and how many pairs it found."/>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Top">
+        <Button Classes="secondary" Content="Refresh" Command="{Binding RefreshCommand}"/>
+        <Button Classes="primary" Content="New Match Job" Command="{Binding GoNewMatchJobCommand}"/>
+      </StackPanel>
+    </Grid>
+
+    <StackPanel Grid.Row="1" Spacing="8" Margin="0,0,0,10">
+      <ProgressBar IsIndeterminate="True" Height="4" IsVisible="{Binding IsLoading}"/>
+      <TextBlock Classes="error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}"/>
+    </StackPanel>
+
+    <Border Grid.Row="2" Classes="card" Padding="0">
+      <Panel>
+        <DataGrid ItemsSource="{Binding MatchJobs}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  CanUserReorderColumns="False"
+                  HeadersVisibility="Column">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Id" Binding="{Binding Id}" Width="60"/>
+            <DataGridTextColumn Header="Dataset A" Binding="{Binding DatasetAName}" Width="160"/>
+            <DataGridTextColumn Header="Dataset B" Binding="{Binding DatasetBName}" Width="160"/>
+            <DataGridTextColumn Header="Threshold" Binding="{Binding Threshold, StringFormat='{}{0:0.00}'}" Width="90"/>
+            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
+            <DataGridTextColumn Header="Matches" Binding="{Binding TotalMatchesFound, StringFormat='{}{0:N0}'}" Width="90"/>
+            <DataGridTextColumn Header="Created" Width="140"
+                                Binding="{Binding CreatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}"/>
+            <DataGridTextColumn Header="Completed" Width="140"
+                                Binding="{Binding CompletedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}"/>
+            <DataGridTemplateColumn Header="" Width="150">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate>
+                  <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                    <Button Classes="secondary" Content="View" Padding="8,4"
+                            Command="{Binding $parent[DataGrid].((vm:MatchJobsViewModel)DataContext).ViewResultsCommand}"
+                            CommandParameter="{Binding}"/>
+                    <Button Classes="danger" Content="&#x2715;" ToolTip.Tip="Delete match job"
+                            Command="{Binding $parent[DataGrid].((vm:MatchJobsViewModel)DataContext).DeleteJobCommand}"
+                            CommandParameter="{Binding}"/>
+                  </StackPanel>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
+          </DataGrid.Columns>
+        </DataGrid>
+
+        <TextBlock Classes="subtle" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   IsVisible="{Binding IsEmpty}"
+                   Text="No match jobs yet. Run one from New Match Job."/>
+      </Panel>
+    </Border>
+
+    <Button Grid.Row="3" Classes="secondary" Content="&#x2190;  Back" Margin="0,14,0,0"
+            HorizontalAlignment="Left" Command="{Binding GoHomeCommand}"/>
+  </Grid>
+</UserControl>

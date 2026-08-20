@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:VectorMatchEngine.UI.ViewModels"
+             x:Class="VectorMatchEngine.UI.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+  <Grid Background="{StaticResource AppBackground}" Margin="16" RowDefinitions="Auto,*,Auto">
+
+    <StackPanel Grid.Row="0" Spacing="4" Margin="0,8,0,20">
+      <TextBlock Classes="h1" Text="Settings"/>
+      <TextBlock Classes="subtle" Text="Where Vector Match Engine stores its datasets and match results."/>
+    </StackPanel>
+
+    <Border Grid.Row="1" Classes="card" VerticalAlignment="Top" MaxWidth="880" HorizontalAlignment="Left">
+      <StackPanel Spacing="14">
+        <TextBlock Classes="h2" Text="SQL Server Connection String"/>
+
+        <TextBox Text="{Binding ConnectionString, Mode=TwoWay}"
+                 AcceptsReturn="False"
+                 Watermark="Server=.;Database=VectorMatchDb;Trusted_Connection=True;TrustServerCertificate=True;"
+                 MinWidth="700"/>
+
+        <TextBlock Classes="subtle" TextWrapping="Wrap"
+                   Text="Saving applies any pending schema migrations, creating the database if it does not exist yet."/>
+
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <Button Classes="secondary" Content="Test Connection"
+                  Command="{Binding TestConnectionCommand}"
+                  IsEnabled="{Binding !IsBusy}"/>
+          <Button Classes="primary" Content="Save &amp; Apply"
+                  Command="{Binding SaveCommand}"
+                  IsEnabled="{Binding !IsBusy}"/>
+          <ProgressBar IsIndeterminate="True" Width="120" Height="4"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding IsBusy}"/>
+        </StackPanel>
+
+        <StackPanel IsVisible="{Binding HasStatus}">
+          <TextBlock Classes="success" Text="{Binding StatusMessage}"
+                     IsVisible="{Binding IsSuccess}"/>
+          <TextBlock Classes="error" Text="{Binding StatusMessage}"
+                     IsVisible="{Binding !IsSuccess}"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <Button Grid.Row="2" Classes="secondary" Content="&#x2190;  Back to Home"
+            HorizontalAlignment="Left" Command="{Binding GoHomeCommand}"/>
+  </Grid>
+</UserControl>
