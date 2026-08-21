@@ -188,28 +188,44 @@ dotnet ef migrations add <Name> \
 `DesignTimeDbContextFactory` supplies a placeholder connection string, so scaffolding works without
 a running server. Override it with the `VECTORMATCH_CONNECTION` environment variable if needed.
 
-### Dependency security
+### Dependency management
 
-Transitive dependency auditing is enabled for every project via `Directory.Build.props`:
+**Restores are deterministic.** `RestorePackagesWithLockFile` is on, so each project has a
+committed `packages.lock.json` recording the exact resolved graph, transitive packages included.
+Locally the lock file updates when you change a version; on CI, `ContinuousIntegrationBuild=true`
+turns on `RestoreLockedMode`, so a graph that no longer matches the lock file fails the restore
+(`NU1004`) instead of silently drifting.
 
-```xml
-<NuGetAudit>true</NuGetAudit>
-<NuGetAuditMode>all</NuGetAuditMode>
-<NuGetAuditLevel>low</NuGetAuditLevel>
+```bash
+dotnet restore                                    # normal: updates the lock file if ranges changed
+dotnet restore -p:ContinuousIntegrationBuild=true # CI: fails if the graph drifted
+dotnet restore --force-evaluate                   # deliberately re-resolve and rewrite the lock file
 ```
 
-NuGet audits *direct* packages by default; `all` extends that to transitive ones, so a vulnerable
-package anywhere in the graph shows up as an `NU1903` build warning instead of going unnoticed.
-To check on demand:
+**Transitive packages are audited at build time.** NuGet audits only *direct* packages by default;
+`NuGetAuditMode=all` extends that to the whole graph, so a vulnerable package at any depth appears
+as an `NU1903` build warning. On demand:
 
 ```bash
 dotnet list package --vulnerable --include-transitive
 ```
 
-ClosedXML is held at `0.105.*` for this reason. The 0.102.x line pins `System.IO.Packaging 6.0.0`,
-which carries two high-severity DoS advisories (CVE-2024-43483, CVE-2024-43484); 0.104+ dropped that
-dependency and reaches the patched `8.0.1` through `DocumentFormat.OpenXml 3.x`. **Do not downgrade
-ClosedXML below 0.104** without re-checking the audit.
+**Two version choices are deliberate — please read before changing them.**
+
+- **ClosedXML is held at `0.105.*`.** The 0.102.x line pins `System.IO.Packaging 6.0.0`, which
+  carries two high-severity DoS advisories (CVE-2024-43483, CVE-2024-43484). ClosedXML 0.104+
+  dropped that dependency and reaches the patched `8.0.1` via `DocumentFormat.OpenXml 3.x`.
+  Do not downgrade below 0.104.
+
+- **Avalonia core is pinned to `11.3.20`, but `Avalonia.Controls.DataGrid` to `11.3.13`.** This
+  mismatch is intentional: 11.3.13 is the DataGrid package's newest release — it ships on its own
+  cadence and declares `Avalonia >= 11.3.13`, so the pairing is supported. Do *not* "tidy" this by
+  dropping the core packages to 11.3.13, because `Avalonia.FreeDesktop 11.3.13` pulls
+  `Tmds.DBus.Protocol 0.21.2`, which has a high-severity advisory (CVE-2026-39959 — D-Bus signal
+  spoofing and file-descriptor exhaustion on Linux). 11.3.20 pulls the patched 0.21.3.
+
+Every package is pinned or range-bounded rather than floated on a bare wildcard, so restores do not
+quietly change what gets built.
 
 A few implementation notes worth knowing before editing:
 

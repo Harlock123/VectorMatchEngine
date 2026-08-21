@@ -8,5 +8,15 @@
     <NuGetAudit>true</NuGetAudit>
     <NuGetAuditMode>all</NuGetAuditMode>
     <NuGetAuditLevel>low</NuGetAuditLevel>
+
+    <!-- Deterministic restores. Each project gets a packages.lock.json recording the exact
+         resolved graph, transitive packages included; commit it. Locally the lock file is
+         updated when a version range changes, so ordinary upgrades still work. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+
+    <!-- On CI, refuse to restore if the resolved graph differs from the committed lock file
+         rather than quietly updating it. Turns dependency drift into a failed build instead
+         of a silent difference between what CI tested and what the lock file claims. -->
+    <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
   </PropertyGroup>
 </Project>

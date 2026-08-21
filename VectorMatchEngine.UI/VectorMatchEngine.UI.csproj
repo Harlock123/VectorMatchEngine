@@ -9,10 +9,21 @@
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.*" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.*" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.*" />
-    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.*" />
+    <!-- Avalonia versions are pinned exactly rather than floated on "11.*", which was
+         silently resolving the family to mismatched versions at restore time.
+
+         The core three stay together at 11.3.20. Avalonia.Controls.DataGrid is deliberately
+         one step behind at 11.3.13 because that is its newest release; it ships on its own
+         cadence and declares Avalonia >= 11.3.13, so pairing it with 11.3.20 is supported.
+
+         Do NOT "fix" this by dropping the core packages to 11.3.13 to match: Avalonia.FreeDesktop
+         11.3.13 pulls Tmds.DBus.Protocol 0.21.2, which carries a high-severity advisory
+         (CVE-2026-39959, D-Bus signal spoofing / FD exhaustion on Linux). 11.3.20 pulls the
+         patched 0.21.3. -->
+    <PackageReference Include="Avalonia" Version="11.3.20" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.20" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.20" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.13" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.*" />
   </ItemGroup>
