@@ -188,6 +188,29 @@ dotnet ef migrations add <Name> \
 `DesignTimeDbContextFactory` supplies a placeholder connection string, so scaffolding works without
 a running server. Override it with the `VECTORMATCH_CONNECTION` environment variable if needed.
 
+### Dependency security
+
+Transitive dependency auditing is enabled for every project via `Directory.Build.props`:
+
+```xml
+<NuGetAudit>true</NuGetAudit>
+<NuGetAuditMode>all</NuGetAuditMode>
+<NuGetAuditLevel>low</NuGetAuditLevel>
+```
+
+NuGet audits *direct* packages by default; `all` extends that to transitive ones, so a vulnerable
+package anywhere in the graph shows up as an `NU1903` build warning instead of going unnoticed.
+To check on demand:
+
+```bash
+dotnet list package --vulnerable --include-transitive
+```
+
+ClosedXML is held at `0.105.*` for this reason. The 0.102.x line pins `System.IO.Packaging 6.0.0`,
+which carries two high-severity DoS advisories (CVE-2024-43483, CVE-2024-43484); 0.104+ dropped that
+dependency and reaches the patched `8.0.1` through `DocumentFormat.OpenXml 3.x`. **Do not downgrade
+ClosedXML below 0.104** without re-checking the audit.
+
 A few implementation notes worth knowing before editing:
 
 - **`Styles/AppStyles.axaml` must use `DynamicResource`, not `StaticResource`.** Application styles

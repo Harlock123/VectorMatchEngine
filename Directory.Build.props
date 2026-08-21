@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <!-- Fail-loud dependency auditing.
+         NuGet audits direct packages by default; "all" extends that to transitive ones,
+         which is where the System.IO.Packaging advisories (CVE-2024-43483, CVE-2024-43484)
+         came in. Without this, a vulnerable transitive package is only visible by explicitly
+         running "dotnet list package" with the vulnerable and include-transitive flags. -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+  </PropertyGroup>
+</Project>
