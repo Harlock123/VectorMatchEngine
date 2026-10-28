@@ -53,9 +53,13 @@ dotnet build VectorMatchEngine.sln
 dotnet run --project VectorMatchEngine.UI
 ```
 
-On first launch the app opens directly to **Settings**, because no database is configured yet:
+The connection string starts out as a default that points at a local SQL Server (`Server=.`,
+database `VectorMatchDb`, Windows authentication), and on launch the app applies the EF Core
+migrations against it. If that server is reachable, the database and its four tables are created and
+the app opens on **Home**. If not, it opens **Settings** with a "Could not reach the database"
+message. To point it at a different server:
 
-1. Paste a SQL Server connection string, for example:
+1. Open **Settings** and paste a SQL Server connection string, for example:
    ```
    Server=.;Database=VectorMatchDb;Trusted_Connection=True;TrustServerCertificate=True;
    ```
