@@ -3,7 +3,7 @@
 **Fuzzy record matching between Excel spreadsheets.** Find the same real-world entity across two
 datasets when the names are spelled differently and there is no shared key.
 
-Built with .NET 8 · Avalonia UI 11 · ML.NET 3 · EF Core 8 · SQL Server
+Built with .NET 10 · Avalonia UI 11 · ML.NET 3 · EF Core 10 · SQL Server
 
 ---
 
@@ -38,7 +38,7 @@ are close enough — ranked, reviewable side-by-side, and exportable to Excel.
 
 | | |
 |---|---|
-| **.NET 8 SDK** | `dotnet --version` should report 8.0 or later. Pinned via `global.json`. |
+| **.NET 10 SDK** | `dotnet --version` should report 8.0 or later. Pinned via `global.json`. |
 | **SQL Server** | Local (Express / Developer / LocalDB) or remote. The app creates its own database and schema. |
 
 Runs on Windows, macOS, and Linux.

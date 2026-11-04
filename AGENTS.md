@@ -8,7 +8,7 @@ the rules that keep it working.
 
 A desktop app that finds the same real-world records across two Excel spreadsheets with no shared key. Rows are
 turned into hashed character-trigram vectors with ML.NET, stored in SQL Server through EF Core, and compared by
-cosine similarity. C# on .NET 8 with Avalonia 11 (MVVM with CommunityToolkit.Mvvm and
+cosine similarity. C# on .NET 10 with Avalonia 11 (MVVM with CommunityToolkit.Mvvm and
 Microsoft.Extensions.DependencyInjection). It runs on Windows, macOS and Linux, but needs a SQL Server to talk to.
 
 ## Commands
