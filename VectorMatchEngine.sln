@@ -12,6 +12,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SAMPLES", "SAMPLES", "{D194EDBB-38E3-4651-A91C-E4B912F1619B}"
 	ProjectSection(SolutionItems) = preProject
 		SAMPLES\ClaimsSample2025.xlsx = SAMPLES\ClaimsSample2025.xlsx
+		SAMPLES\ClaimsSample2025 vectors.xlsx = SAMPLES\ClaimsSample2025 vectors.xlsx
 		SAMPLES\GenerateClaimsSample.cs = SAMPLES\GenerateClaimsSample.cs
 	EndProjectSection
 EndProject

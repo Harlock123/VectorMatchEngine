@@ -155,7 +155,14 @@ random with made-up prefixes. The codes are real code values, so the lines look 
 
 To try it, import the sheet and vectorize the member columns (name, DOB, street, ZIP, for instance): every
 line for the same member gets the same vector, so matching the sheet against itself, or against a second
-extract of the same members, finds them. `SAMPLES/GenerateClaimsSample.cs` makes the workbook
+extract of the same members, finds them.
+
+`SAMPLES/ClaimsSample2025 vectors.xlsx` is that sheet already vectorized (Import, *Another spreadsheet*):
+all 10,000 lines with the twelve member columns vectorized (first, last and middle initial, gender, DOB,
+street, city, state, ZIP, SSN, insurance ID, phone) and every column preserved, so the vectors (`V0` …
+`V511`, from column `AV`) sit beside the claim. Importing it loads those vectors into the database as they are.
+
+`SAMPLES/GenerateClaimsSample.cs` makes the claims workbook
 (`dotnet run SAMPLES/GenerateClaimsSample.cs` from the repository root); its seed is fixed, so it makes
 the same rows every time.
 
