@@ -27,6 +27,13 @@ public class VectorSheetExportService
     private const string Main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
     private const string RelationshipsNs = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
+    /// <summary>
+    /// The About sheet's Method line. Loading a vectors workbook back checks it, since vectors made another way
+    /// (a different n-gram length or hash size) can't be compared with this version's.
+    /// </summary>
+    public static string MethodDescription =>
+        $"Character {VectorizationService.NgramLength}-grams hashed into 2^{VectorizationService.NumberOfBits} buckets, L2-normalized";
+
     /// <summary>The bold style's index in the stylesheet this writes.</summary>
     private const int BoldStyle = 1;
 
@@ -174,7 +181,7 @@ public class VectorSheetExportService
             ("Preserved columns", string.Join(", ", preservedColumns)),
             ("Vector dimensions", dimensions.ToString(CultureInfo.InvariantCulture)),
             ("Vector columns", $"V0 to V{dimensions - 1}, starting at column {ColumnName(firstVectorColumn)} of the {VectorsSheetName} sheet"),
-            ("Method", $"Character {VectorizationService.NgramLength}-grams hashed into 2^{VectorizationService.NumberOfBits} buckets, L2-normalized"),
+            ("Method", MethodDescription),
             ("Similarity", "Vectors have length 1, so the cosine similarity of two rows is the sum of their products (SUMPRODUCT)"),
         };
 

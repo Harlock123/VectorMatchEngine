@@ -27,7 +27,7 @@ are close enough — ranked, reviewable side-by-side, and exportable to Excel.
   similarity vector), *preserved* (stored verbatim for display and export), or both.
 - **Store** every row's vector and preserved values in SQL Server, so datasets are imported once
   and matched many times — or **write the vectors to another spreadsheet** instead, with no database
-  involved.
+  involved, and **load that workbook into the database** later without vectorizing again.
 - **Match** two datasets at a similarity threshold you control, with live progress.
 - **Review** matched pairs side-by-side in a grid whose columns adapt to whatever each dataset
   preserved.
@@ -86,6 +86,7 @@ no restart needed.
 **1. Import Dataset A** — *Home → Import Dataset*
 
 - *Step 1* — pick an `.xlsx` file. The first worksheet is used; row 1 is treated as the header row.
+  A vectors workbook (see below) is recognised instead, and Step 2 then only asks for a name.
 - *Step 2* — name the dataset, then tick **Vectorize** and/or **Preserve** for each column. A column
   can be both. At least one column must be vectorized. Under **Write the vectors to**, keep
   *The database* (needed for matching) or choose *Another spreadsheet* and pick the `.xlsx` file to write.
@@ -106,6 +107,20 @@ Vectors have unit length, so the cosine similarity of two rows is the sum of the
 column `V0` starts at). The workbook is streamed to disk as it is written, so memory stays flat: 60,000
 rows take a few seconds. A worksheet holds at most 1,048,575 rows and 16,384 columns, so the source can
 have at most that many rows, and the preserved columns plus 514 must fit.
+
+**Loading a vectors workbook.** Import a vectors workbook like any other file: Step 1 recognises it by its
+`Vectors` sheet (a `Vectorized Text` column followed by `V0`, `V1` …), Step 2 shows what it holds and takes
+the name its `About` sheet records, and Process stores its rows and vectors as a dataset, ready for match
+jobs. Nothing is vectorized again, so matching against it gives the same scores as importing the source.
+
+- The columns between `Row` and `Vectorized Text` become the dataset's preserved columns.
+- It reads the workbook as Excel or another program saves it again too, and rows may be sorted or deleted
+  (hidden rows still load). Vectors that were edited are rescaled to length 1, since matching relies on that.
+- It refuses vectors of another size, or made another way (the `About` sheet's `Method`), since they
+  couldn't be compared with this version's; import the source workbook again instead. A cell in `V0` …
+  that isn't a number stops the load with its address, and nothing is saved.
+- Like the writer it streams the file, so 60,000 rows load in a few seconds without holding the sheet in
+  memory.
 
 **2. Import Dataset B** — same flow. Vectorize the *same kinds of columns* you chose for Dataset A,
 so the two are semantically comparable.
@@ -174,7 +189,7 @@ data. Matching is O(A × B) — two 10,000-row datasets is 100 million compariso
 ## Project layout
 
 ```
-VectorMatchEngine.Core/     Excel I/O, ML.NET vectorization, cosine similarity, vectors to .xlsx
+VectorMatchEngine.Core/     Excel I/O, ML.NET vectorization, cosine similarity, vectors to/from .xlsx
                             Pure logic — no UI, no database dependencies
 VectorMatchEngine.Data/     EF Core entities, DbContext, repositories, migrations,
                             and the DataService orchestrator the UI calls

@@ -45,6 +45,19 @@ public partial class ImportViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(ProcessCommand))]
     private string _outputFilePath = string.Empty;
 
+    /// <summary>
+    /// The chosen file is a vectors workbook (written by "Another spreadsheet"): Step 2 then just names the dataset,
+    /// and Process loads its vectors into the database as they are.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanProcess), nameof(IsColumnWorkbook))]
+    [NotifyCanExecuteChangedFor(nameof(ProcessCommand))]
+    private bool _isVectorWorkbook;
+
+    [ObservableProperty] private string _vectorWorkbookSummary = string.Empty;
+
+    public bool IsColumnWorkbook => !IsVectorWorkbook;
+
     /// <summary>The inverse of <see cref="WriteToSpreadsheet"/>, for the other radio button.</summary>
     public bool WriteToDatabase
     {
@@ -79,11 +92,15 @@ public partial class ImportViewModel : ObservableObject
 
     public bool CanGoNext => !string.IsNullOrWhiteSpace(SelectedFilePath) && !IsLoadingColumns;
 
-    /// <summary>At least one column vectorized, a non-blank dataset name, and an output file if writing to one.</summary>
+    /// <summary>
+    /// A non-blank dataset name, and (unless loading a vectors workbook) at least one column vectorized and an
+    /// output file if writing to one.
+    /// </summary>
     public bool CanProcess =>
         !string.IsNullOrWhiteSpace(DatasetName)
-        && ColumnSelections.Any(column => column.IsVectorized)
-        && (!WriteToSpreadsheet || !string.IsNullOrWhiteSpace(OutputFilePath))
+        && (IsVectorWorkbook
+            || (ColumnSelections.Any(column => column.IsVectorized)
+                && (!WriteToSpreadsheet || !string.IsNullOrWhiteSpace(OutputFilePath))))
         && !IsProcessing;
 
     // ── Step 1 commands ───────────────────────────────────────────────────
@@ -119,6 +136,22 @@ public partial class ImportViewModel : ObservableObject
 
         try
         {
+            // A vectors workbook skips the column step: its vectors are loaded as they are.
+            var vectorInfo = await _dataService.InspectVectorWorkbookAsync(SelectedFilePath);
+            if (vectorInfo is not null)
+            {
+                ColumnSelections.Clear();
+                IsVectorWorkbook = true;
+                VectorWorkbookSummary = vectorInfo.Summary;
+                if (vectorInfo.DatasetName.Length > 0
+                    && (string.IsNullOrWhiteSpace(DatasetName) || DatasetName == Path.GetFileNameWithoutExtension(SelectedFilePath)))
+                    DatasetName = vectorInfo.DatasetName;
+                CurrentStep = 2;
+                ProcessCommand.NotifyCanExecuteChanged();
+                return;
+            }
+
+            IsVectorWorkbook = false;
             var columns = await _dataService.GetColumnNamesAsync(SelectedFilePath);
 
             if (columns.Count == 0)
@@ -165,6 +198,7 @@ public partial class ImportViewModel : ObservableObject
     private void GoBack()
     {
         CurrentStep = 1;
+        IsVectorWorkbook = false;
         ErrorMessage = string.Empty;
     }
 
@@ -195,7 +229,8 @@ public partial class ImportViewModel : ObservableObject
         var preserved = ColumnSelections.Where(c => c.IsPreserved).Select(c => c.Name).ToList();
         var filePath = SelectedFilePath;
         var name = DatasetName;
-        var toSpreadsheet = WriteToSpreadsheet;
+        var toSpreadsheet = WriteToSpreadsheet && !IsVectorWorkbook;
+        var fromVectorWorkbook = IsVectorWorkbook;
         var outputPath = OutputFilePath;
 
         CurrentStep = 3;
@@ -218,7 +253,15 @@ public partial class ImportViewModel : ObservableObject
 
         try
         {
-            if (toSpreadsheet)
+            if (fromVectorWorkbook)
+            {
+                var dataset = await Task.Run(() => _dataService.LoadVectorWorkbookAsync(filePath, name, progress));
+
+                SuccessSummary =
+                    $"{dataset.RowCount:N0} records loaded from the vectors workbook. Vector dimensions: {dataset.VectorDimensions}.";
+                SavedToDatabase = true;
+            }
+            else if (toSpreadsheet)
             {
                 var rowCount = await Task.Run(() => _dataService.VectorizeToSpreadsheetAsync(
                     filePath, name, vectorized, preserved, outputPath, progress));
@@ -267,6 +310,8 @@ public partial class ImportViewModel : ObservableObject
         DatasetName = string.Empty;
         OutputFilePath = string.Empty;
         WriteToSpreadsheet = false;
+        IsVectorWorkbook = false;
+        VectorWorkbookSummary = string.Empty;
         SavedToDatabase = false;
         ProgressValue = 0;
         ProgressMessage = string.Empty;

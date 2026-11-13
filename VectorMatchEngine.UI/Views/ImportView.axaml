@@ -20,7 +20,8 @@
                    Watermark="No file selected"/>
           <Button Classes="secondary" Content="Browse..." Command="{Binding BrowseFileCommand}"/>
         </StackPanel>
-        <TextBlock Classes="subtle" Text="The first worksheet is used. Row 1 is treated as the header row."/>
+        <TextBlock Classes="subtle" TextWrapping="Wrap"
+                   Text="The first worksheet is used. Row 1 is treated as the header row. A vectors workbook (from &quot;Another spreadsheet&quot;) is recognised, and its vectors are loaded as they are."/>
 
         <StackPanel Orientation="Horizontal" Spacing="10">
           <Button Classes="primary" Content="Next  &#x2192;" Command="{Binding NextCommand}"/>
@@ -39,9 +40,16 @@
           <TextBlock Classes="h2" Text="Dataset name"/>
           <TextBox Text="{Binding DatasetName, Mode=TwoWay}" MaxWidth="480"
                    HorizontalAlignment="Left" Watermark="e.g. Customers 2026 Q1"/>
-          <TextBlock Classes="subtle" TextWrapping="Wrap"
+          <StackPanel Spacing="6" IsVisible="{Binding IsVectorWorkbook}">
+            <TextBlock Classes="h2" Text="A vectors workbook" Margin="0,6,0,0"/>
+            <TextBlock Classes="body" TextWrapping="Wrap" Text="{Binding VectorWorkbookSummary}"/>
+            <TextBlock Classes="subtle" TextWrapping="Wrap"
+                       Text="Its vectors are loaded into the database as they are, without vectorizing again, so it can be used in match jobs like any imported dataset."/>
+          </StackPanel>
+          <TextBlock Classes="subtle" TextWrapping="Wrap" IsVisible="{Binding IsColumnWorkbook}"
                      Text="Vectorize: the column's text is embedded into the similarity vector. Preserve: the value is stored verbatim so it can be shown and exported. A column can be both."/>
 
+          <StackPanel Spacing="10" IsVisible="{Binding IsColumnWorkbook}">
           <TextBlock Classes="h2" Text="Write the vectors to" Margin="0,6,0,0"/>
           <StackPanel Orientation="Horizontal" Spacing="20">
             <RadioButton Content="The database (for matching)"
@@ -56,12 +64,13 @@
               <Button Classes="secondary" Content="Choose File..." Command="{Binding BrowseOutputFileCommand}"/>
             </StackPanel>
             <TextBlock Classes="subtle" TextWrapping="Wrap"
-                       Text="A new workbook: a Vectors sheet with each row's preserved columns, the text that was vectorized and one column per vector dimension (V0 to V511), plus an About sheet. Nothing is saved to the database, so these rows can't be used in a match job."/>
+                       Text="A new workbook: a Vectors sheet with each row's preserved columns, the text that was vectorized and one column per vector dimension (V0 to V511), plus an About sheet. Nothing is saved to the database; to match these rows later, import this workbook (it's recognised, and its vectors are loaded as they are)."/>
+          </StackPanel>
           </StackPanel>
         </StackPanel>
       </Border>
 
-      <Border Grid.Row="1" Classes="card" Padding="0">
+      <Border Grid.Row="1" Classes="card" Padding="0" IsVisible="{Binding IsColumnWorkbook}">
         <DataGrid ItemsSource="{Binding ColumnSelections}"
                   AutoGenerateColumns="False"
                   CanUserReorderColumns="False"
@@ -80,7 +89,8 @@
         <Button Classes="secondary" Content="&#x2190;  Back" Command="{Binding GoBackCommand}"/>
         <Button Classes="primary" Content="Process Dataset" Command="{Binding ProcessCommand}"/>
         <TextBlock Classes="subtle" VerticalAlignment="Center"
-                   Text="Select at least one column to vectorize, enter a name, and choose an output file if writing to a spreadsheet."/>
+                   Text="Select at least one column to vectorize, enter a name, and choose an output file if writing to a spreadsheet."
+                   IsVisible="{Binding IsColumnWorkbook}"/>
       </StackPanel>
     </Grid>
 

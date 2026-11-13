@@ -23,6 +23,7 @@ public class DataService
     private readonly SimilarityService _similarityService;
     private readonly ExcelExportService _excelExportService;
     private readonly VectorSheetExportService _vectorSheetExportService;
+    private readonly VectorSheetImportService _vectorSheetImportService;
     private readonly ILogger<DataService> _logger;
 
     public DataService(
@@ -34,6 +35,7 @@ public class DataService
         SimilarityService similarityService,
         ExcelExportService excelExportService,
         VectorSheetExportService vectorSheetExportService,
+        VectorSheetImportService vectorSheetImportService,
         ILogger<DataService>? logger = null)
     {
         _contextFactory = contextFactory;
@@ -44,6 +46,7 @@ public class DataService
         _similarityService = similarityService;
         _excelExportService = excelExportService;
         _vectorSheetExportService = vectorSheetExportService;
+        _vectorSheetImportService = vectorSheetImportService;
         _logger = logger ?? NullLogger<DataService>.Instance;
     }
 
@@ -81,44 +84,96 @@ public class DataService
         preservedColumns ??= new List<string>();
         var (rows, vectors) = await ReadAndVectorizeAsync(filePath, datasetName, vectorizedColumns, progress);
 
+        var preserved = rows
+            .Select(row => preservedColumns.ToDictionary(
+                column => column,
+                column => row.GetValueOrDefault(column, string.Empty)))
+            .ToList();
+
+        return await SaveDatasetAsync(
+            datasetName, Path.GetFileName(filePath), vectorizedColumns, preservedColumns, preserved, vectors, progress);
+    }
+
+    /// <summary>
+    /// What a workbook holds if it's a vectors workbook (one written by <see cref="VectorizeToSpreadsheetAsync"/>);
+    /// null for any other workbook. Throws if it is one but its vectors don't fit this version.
+    /// </summary>
+    public Task<VectorWorkbookInfo?> InspectVectorWorkbookAsync(string filePath)
+        => _vectorSheetImportService.InspectAsync(filePath);
+
+    /// <summary>
+    /// Loads a vectors workbook into the database as a dataset, using its vectors as they are (no vectorizing),
+    /// so it can be matched like any imported dataset.
+    /// </summary>
+    public async Task<Dataset> LoadVectorWorkbookAsync(
+        string filePath,
+        string datasetName,
+        IProgress<(int current, int total, string message)>? progress = null)
+    {
+        if (string.IsNullOrWhiteSpace(datasetName))
+            throw new ArgumentException("A dataset name is required.", nameof(datasetName));
+
+        progress?.Report((0, 0, "Reading the vectors workbook..."));
+        var workbook = await _vectorSheetImportService.ReadAsync(filePath, progress);
+        var info = workbook.Info;
+
+        // The dataset is named after the data's own source file when the workbook records it.
+        var fileName = info.SourceFile.Length > 0
+            ? $"{info.SourceFile} (via {Path.GetFileName(filePath)})"
+            : Path.GetFileName(filePath);
+        if (fileName.Length > 512)
+            fileName = fileName[..512];
+
+        return await SaveDatasetAsync(
+            datasetName, fileName, info.VectorizedColumns, info.PreservedColumns, workbook.Preserved, workbook.Vectors,
+            progress);
+    }
+
+    /// <summary>Stores a dataset: one record per row, with its vector and preserved values.</summary>
+    private async Task<Dataset> SaveDatasetAsync(
+        string datasetName,
+        string fileName,
+        List<string> vectorizedColumns,
+        List<string> preservedColumns,
+        List<Dictionary<string, string>> preserved,
+        List<float[]> vectors,
+        IProgress<(int current, int total, string message)>? progress)
+    {
+        int count = vectors.Count;
         var dataset = new Dataset
         {
             Name = datasetName.Trim(),
-            FileName = Path.GetFileName(filePath),
-            RowCount = rows.Count,
+            FileName = fileName,
+            RowCount = count,
             VectorizedColumnsJson = JsonSerializer.Serialize(vectorizedColumns),
             PreservedColumnsJson = JsonSerializer.Serialize(preservedColumns),
-            VectorDimensions = vectors.Count > 0 ? vectors[0].Length : 0,
+            VectorDimensions = count > 0 ? vectors[0].Length : 0,
             CreatedAt = DateTime.UtcNow
         };
 
-        var records = new List<DatasetRecord>(rows.Count);
-        for (int i = 0; i < rows.Count; i++)
+        var records = new List<DatasetRecord>(count);
+        for (int i = 0; i < count; i++)
         {
             // Reporting every row would swamp the dispatcher on large files.
-            if (i % 100 == 0 || i == rows.Count - 1)
-                progress?.Report((i + 1, rows.Count, $"Preparing record {i + 1:N0} of {rows.Count:N0}..."));
-
-            var preserved = preservedColumns.ToDictionary(
-                column => column,
-                column => rows[i].GetValueOrDefault(column, string.Empty));
+            if (i % 100 == 0 || i == count - 1)
+                progress?.Report((i + 1, count, $"Preparing record {i + 1:N0} of {count:N0}..."));
 
             records.Add(new DatasetRecord
             {
                 RowIndex = i,
                 VectorData = _vectorizationService.SerializeVector(vectors[i]),
-                PreservedDataJson = JsonSerializer.Serialize(preserved)
+                PreservedDataJson = JsonSerializer.Serialize(preserved[i])
             });
         }
 
         dataset.Records = records;
 
-        progress?.Report((rows.Count, rows.Count, $"Saving {rows.Count:N0} records to the database..."));
+        progress?.Report((count, count, $"Saving {count:N0} records to the database..."));
         await _datasetRepository.CreateAsync(dataset);
 
-        progress?.Report((rows.Count, rows.Count, "Done."));
+        progress?.Report((count, count, "Done."));
         _logger.LogInformation(
-            "Ingested dataset '{Name}' ({RowCount} rows, {Dimensions} dims).",
+            "Saved dataset '{Name}' ({RowCount} rows, {Dimensions} dims).",
             dataset.Name, dataset.RowCount, dataset.VectorDimensions);
 
         return dataset;

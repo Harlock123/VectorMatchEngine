@@ -31,6 +31,10 @@ dotnet restore -p:ContinuousIntegrationBuild=true    # fails if the packages dri
   - `Services/VectorSheetExportService.cs` writes a dataset's vectors to an `.xlsx` instead of the database
     (Import, Step 2, "Another spreadsheet"). It writes the zip and sheet XML itself, streaming, because a
     500-plus-column sheet built in memory by ClosedXML or the Open XML SDK costs 25 to 75 KB a row.
+  - `Services/VectorSheetImportService.cs` reads such a workbook back (the import wizard recognises one in
+    Step 1), streaming too, and copes with Excel's re-saved form (shared strings, cell references). It
+    refuses vectors whose size or the About sheet's `Method` (`VectorSheetExportService.MethodDescription`)
+    differ from this version's; keep that string in step with the vectorizer.
   - `Services/VectorizationService.cs`: the ML.NET trigram pipeline; `NumberOfBits` sets the vector size.
   - `Services/SimilarityService.cs`: the all-pairs dot-product comparison.
   - `Models/`: plain request and result types.
@@ -38,7 +42,7 @@ dotnet restore -p:ContinuousIntegrationBuild=true    # fails if the packages dri
   - `AppDbContext.cs`, `Entities/`, `Migrations/`, and `Repositories/` (datasets and match jobs).
   - `DataService.cs`: the orchestrator the UI calls (migrate, import, match, export, delete).
     `IngestExcelAsync` (to the database) and `VectorizeToSpreadsheetAsync` (to a file, no database) share
-    `ReadAndVectorizeAsync`.
+    `ReadAndVectorizeAsync`; `IngestExcelAsync` and `LoadVectorWorkbookAsync` share `SaveDatasetAsync`.
 - `VectorMatchEngine.UI/`: the Avalonia app.
   - `App.axaml.cs` registers every service and view model in the DI container and applies migrations.
   - `AppSettings.cs` and `AppSettingsDbContextFactory.cs`: the settings file and a context factory that rereads
