@@ -94,6 +94,7 @@ public partial class App : Application
         services.AddSingleton<VectorizationService>();
         services.AddSingleton<SimilarityService>();
         services.AddSingleton<ExcelExportService>();
+        services.AddSingleton<VectorSheetExportService>();
 
         // Data
         services.AddSingleton<IDatasetRepository, DatasetRepository>();

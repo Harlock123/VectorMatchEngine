@@ -26,7 +26,8 @@ are close enough — ranked, reviewable side-by-side, and exportable to Excel.
 - **Import** any `.xlsx` file and choose, per column, whether it is *vectorized* (fed into the
   similarity vector), *preserved* (stored verbatim for display and export), or both.
 - **Store** every row's vector and preserved values in SQL Server, so datasets are imported once
-  and matched many times.
+  and matched many times — or **write the vectors to another spreadsheet** instead, with no database
+  involved.
 - **Match** two datasets at a similarity threshold you control, with live progress.
 - **Review** matched pairs side-by-side in a grid whose columns adapt to whatever each dataset
   preserved.
@@ -86,8 +87,25 @@ no restart needed.
 
 - *Step 1* — pick an `.xlsx` file. The first worksheet is used; row 1 is treated as the header row.
 - *Step 2* — name the dataset, then tick **Vectorize** and/or **Preserve** for each column. A column
-  can be both. At least one column must be vectorized.
+  can be both. At least one column must be vectorized. Under **Write the vectors to**, keep
+  *The database* (needed for matching) or choose *Another spreadsheet* and pick the `.xlsx` file to write.
 - *Step 3* — watch progress; the summary reports rows ingested and vector dimensions.
+
+**Vectors to a spreadsheet.** Choosing *Another spreadsheet* in Step 2 vectorizes the rows exactly as an
+import would, but writes them to a new workbook and saves nothing to the database (so no SQL Server is
+needed, and those rows can't be used in a match job):
+
+- `Vectors` sheet — one row per source row: `Row` (1-based), the preserved columns, `Vectorized Text`
+  (the combined, lower-cased text that was embedded), then `V0` … `V511`, one number per dimension.
+  Zeros are written as `0`, so every row is a complete vector. The header row and the readable columns
+  are frozen.
+- `About` sheet — the dataset name, source file, time, columns, dimensions and method.
+
+Vectors have unit length, so the cosine similarity of two rows is the sum of their products — in Excel,
+`=SUMPRODUCT(Vectors!E2:SV2, Vectors!E3:SV3)` when two columns are preserved (the `About` sheet names the
+column `V0` starts at). The workbook is streamed to disk as it is written, so memory stays flat: 60,000
+rows take a few seconds. A worksheet holds at most 1,048,575 rows and 16,384 columns, so the source can
+have at most that many rows, and the preserved columns plus 514 must fit.
 
 **2. Import Dataset B** — same flow. Vectorize the *same kinds of columns* you chose for Dataset A,
 so the two are semantically comparable.
@@ -156,7 +174,7 @@ data. Matching is O(A × B) — two 10,000-row datasets is 100 million compariso
 ## Project layout
 
 ```
-VectorMatchEngine.Core/     Excel I/O, ML.NET vectorization, cosine similarity
+VectorMatchEngine.Core/     Excel I/O, ML.NET vectorization, cosine similarity, vectors to .xlsx
                             Pure logic — no UI, no database dependencies
 VectorMatchEngine.Data/     EF Core entities, DbContext, repositories, migrations,
                             and the DataService orchestrator the UI calls

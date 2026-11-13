@@ -34,6 +34,24 @@ public partial class ImportViewModel : ObservableObject
 
     public ObservableCollection<ColumnSelectionItem> ColumnSelections { get; } = new();
 
+    /// <summary>Where the vectors go: the database (the default, needed for matching) or another spreadsheet.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WriteToDatabase), nameof(CanProcess))]
+    [NotifyCanExecuteChangedFor(nameof(ProcessCommand))]
+    private bool _writeToSpreadsheet;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanProcess))]
+    [NotifyCanExecuteChangedFor(nameof(ProcessCommand))]
+    private string _outputFilePath = string.Empty;
+
+    /// <summary>The inverse of <see cref="WriteToSpreadsheet"/>, for the other radio button.</summary>
+    public bool WriteToDatabase
+    {
+        get => !WriteToSpreadsheet;
+        set => WriteToSpreadsheet = !value;
+    }
+
     // ── Step 3 ────────────────────────────────────────────────────────────
     [ObservableProperty] private double _progressValue;
     [ObservableProperty] private string _progressMessage = string.Empty;
@@ -41,6 +59,9 @@ public partial class ImportViewModel : ObservableObject
     [ObservableProperty] private string _successSummary = string.Empty;
     [ObservableProperty] private string _errorMessage = string.Empty;
     [ObservableProperty] private bool _isProcessing;
+
+    /// <summary>The finished import went to the database (so View Datasets applies).</summary>
+    [ObservableProperty] private bool _savedToDatabase;
 
     public ImportViewModel(DataService dataService, INavigationService navigation, IDialogService dialogs)
     {
@@ -58,10 +79,11 @@ public partial class ImportViewModel : ObservableObject
 
     public bool CanGoNext => !string.IsNullOrWhiteSpace(SelectedFilePath) && !IsLoadingColumns;
 
-    /// <summary>At least one column vectorized and a non-blank dataset name.</summary>
+    /// <summary>At least one column vectorized, a non-blank dataset name, and an output file if writing to one.</summary>
     public bool CanProcess =>
         !string.IsNullOrWhiteSpace(DatasetName)
         && ColumnSelections.Any(column => column.IsVectorized)
+        && (!WriteToSpreadsheet || !string.IsNullOrWhiteSpace(OutputFilePath))
         && !IsProcessing;
 
     // ── Step 1 commands ───────────────────────────────────────────────────
@@ -146,6 +168,26 @@ public partial class ImportViewModel : ObservableObject
         ErrorMessage = string.Empty;
     }
 
+    [RelayCommand]
+    private async Task BrowseOutputFileAsync()
+    {
+        try
+        {
+            var suggested = $"{(string.IsNullOrWhiteSpace(DatasetName) ? "Dataset" : DatasetName.Trim())} vectors.xlsx";
+            var path = await _dialogs.SaveExcelFileAsync(suggested, "Write the vectors to");
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                OutputFilePath = path;
+                WriteToSpreadsheet = true;
+                ErrorMessage = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Could not open the file picker: {ex.Message}";
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(CanProcess))]
     private async Task ProcessAsync()
     {
@@ -153,12 +195,15 @@ public partial class ImportViewModel : ObservableObject
         var preserved = ColumnSelections.Where(c => c.IsPreserved).Select(c => c.Name).ToList();
         var filePath = SelectedFilePath;
         var name = DatasetName;
+        var toSpreadsheet = WriteToSpreadsheet;
+        var outputPath = OutputFilePath;
 
         CurrentStep = 3;
         IsProcessing = true;
         IsDone = false;
         ErrorMessage = string.Empty;
         SuccessSummary = string.Empty;
+        SavedToDatabase = false;
         ProgressValue = 0;
         ProgressMessage = "Starting...";
         ProcessCommand.NotifyCanExecuteChanged();
@@ -173,13 +218,27 @@ public partial class ImportViewModel : ObservableObject
 
         try
         {
-            var dataset = await Task.Run(() => _dataService.IngestExcelAsync(
-                filePath, name, vectorized, preserved, progress));
+            if (toSpreadsheet)
+            {
+                var rowCount = await Task.Run(() => _dataService.VectorizeToSpreadsheetAsync(
+                    filePath, name, vectorized, preserved, outputPath, progress));
+
+                SuccessSummary =
+                    $"{rowCount:N0} rows vectorized and written to {Path.GetFileName(outputPath)} " +
+                    $"({VectorMatchEngine.Core.Services.VectorizationService.VectorDimensions} vector columns), in {Path.GetDirectoryName(outputPath)}.";
+            }
+            else
+            {
+                var dataset = await Task.Run(() => _dataService.IngestExcelAsync(
+                    filePath, name, vectorized, preserved, progress));
+
+                SuccessSummary =
+                    $"{dataset.RowCount:N0} records ingested. Vector dimensions: {dataset.VectorDimensions}.";
+                SavedToDatabase = true;
+            }
 
             ProgressValue = 100;
             ProgressMessage = "Complete.";
-            SuccessSummary =
-                $"{dataset.RowCount:N0} records ingested. Vector dimensions: {dataset.VectorDimensions}.";
             IsDone = true;
         }
         catch (Exception ex)
@@ -206,6 +265,9 @@ public partial class ImportViewModel : ObservableObject
         ColumnSelections.Clear();
         SelectedFilePath = string.Empty;
         DatasetName = string.Empty;
+        OutputFilePath = string.Empty;
+        WriteToSpreadsheet = false;
+        SavedToDatabase = false;
         ProgressValue = 0;
         ProgressMessage = string.Empty;
         SuccessSummary = string.Empty;

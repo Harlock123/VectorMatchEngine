@@ -41,6 +41,23 @@
                    HorizontalAlignment="Left" Watermark="e.g. Customers 2026 Q1"/>
           <TextBlock Classes="subtle" TextWrapping="Wrap"
                      Text="Vectorize: the column's text is embedded into the similarity vector. Preserve: the value is stored verbatim so it can be shown and exported. A column can be both."/>
+
+          <TextBlock Classes="h2" Text="Write the vectors to" Margin="0,6,0,0"/>
+          <StackPanel Orientation="Horizontal" Spacing="20">
+            <RadioButton Content="The database (for matching)"
+                         IsChecked="{Binding WriteToDatabase, Mode=TwoWay}"/>
+            <RadioButton Content="Another spreadsheet"
+                         IsChecked="{Binding WriteToSpreadsheet, Mode=TwoWay}"/>
+          </StackPanel>
+          <StackPanel Spacing="6" IsVisible="{Binding WriteToSpreadsheet}">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <TextBox Text="{Binding OutputFilePath}" IsReadOnly="True" MinWidth="480"
+                       Watermark="No output file chosen"/>
+              <Button Classes="secondary" Content="Choose File..." Command="{Binding BrowseOutputFileCommand}"/>
+            </StackPanel>
+            <TextBlock Classes="subtle" TextWrapping="Wrap"
+                       Text="A new workbook: a Vectors sheet with each row's preserved columns, the text that was vectorized and one column per vector dimension (V0 to V511), plus an About sheet. Nothing is saved to the database, so these rows can't be used in a match job."/>
+          </StackPanel>
         </StackPanel>
       </Border>
 
@@ -63,7 +80,7 @@
         <Button Classes="secondary" Content="&#x2190;  Back" Command="{Binding GoBackCommand}"/>
         <Button Classes="primary" Content="Process Dataset" Command="{Binding ProcessCommand}"/>
         <TextBlock Classes="subtle" VerticalAlignment="Center"
-                   Text="Select at least one column to vectorize and enter a name."/>
+                   Text="Select at least one column to vectorize, enter a name, and choose an output file if writing to a spreadsheet."/>
       </StackPanel>
     </Grid>
 
@@ -90,7 +107,7 @@
 
         <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding !IsProcessing}">
           <Button Classes="primary" Content="View Datasets" Command="{Binding GoToDatasetsCommand}"
-                  IsVisible="{Binding IsDone}"/>
+                  IsVisible="{Binding SavedToDatabase}"/>
           <Button Classes="secondary" Content="Import Another" Command="{Binding ImportAnotherCommand}"/>
         </StackPanel>
       </StackPanel>

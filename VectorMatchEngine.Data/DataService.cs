@@ -22,6 +22,7 @@ public class DataService
     private readonly VectorizationService _vectorizationService;
     private readonly SimilarityService _similarityService;
     private readonly ExcelExportService _excelExportService;
+    private readonly VectorSheetExportService _vectorSheetExportService;
     private readonly ILogger<DataService> _logger;
 
     public DataService(
@@ -32,6 +33,7 @@ public class DataService
         VectorizationService vectorizationService,
         SimilarityService similarityService,
         ExcelExportService excelExportService,
+        VectorSheetExportService vectorSheetExportService,
         ILogger<DataService>? logger = null)
     {
         _contextFactory = contextFactory;
@@ -41,6 +43,7 @@ public class DataService
         _vectorizationService = vectorizationService;
         _similarityService = similarityService;
         _excelExportService = excelExportService;
+        _vectorSheetExportService = vectorSheetExportService;
         _logger = logger ?? NullLogger<DataService>.Instance;
     }
 
@@ -75,22 +78,8 @@ public class DataService
         List<string> preservedColumns,
         IProgress<(int current, int total, string message)>? progress = null)
     {
-        ArgumentNullException.ThrowIfNull(vectorizedColumns);
         preservedColumns ??= new List<string>();
-
-        if (string.IsNullOrWhiteSpace(datasetName))
-            throw new ArgumentException("A dataset name is required.", nameof(datasetName));
-        if (vectorizedColumns.Count == 0)
-            throw new ArgumentException("Select at least one column to vectorize.", nameof(vectorizedColumns));
-
-        progress?.Report((0, 0, "Reading Excel file..."));
-        var rows = await _excelService.ReadRowsAsync(filePath);
-
-        if (rows.Count == 0)
-            throw new InvalidOperationException("The worksheet contains a header row but no data rows.");
-
-        progress?.Report((0, rows.Count, $"Vectorizing {rows.Count:N0} rows..."));
-        var vectors = _vectorizationService.VectorizeRows(rows, vectorizedColumns);
+        var (rows, vectors) = await ReadAndVectorizeAsync(filePath, datasetName, vectorizedColumns, progress);
 
         var dataset = new Dataset
         {
@@ -133,6 +122,57 @@ public class DataService
             dataset.Name, dataset.RowCount, dataset.VectorDimensions);
 
         return dataset;
+    }
+
+    /// <summary>
+    /// Vectorizes a workbook like <see cref="IngestExcelAsync"/>, but writes the vectors to another .xlsx file
+    /// (see <see cref="VectorSheetExportService"/>) instead of the database. Needs no database connection.
+    /// Returns the number of rows written.
+    /// </summary>
+    public async Task<int> VectorizeToSpreadsheetAsync(
+        string filePath,
+        string datasetName,
+        List<string> vectorizedColumns,
+        List<string> preservedColumns,
+        string outputPath,
+        IProgress<(int current, int total, string message)>? progress = null)
+    {
+        preservedColumns ??= new List<string>();
+        if (string.IsNullOrWhiteSpace(outputPath))
+            throw new ArgumentException("Choose a file to write the vectors to.", nameof(outputPath));
+
+        var (rows, vectors) = await ReadAndVectorizeAsync(filePath, datasetName, vectorizedColumns, progress);
+        await _vectorSheetExportService.ExportVectorsAsync(
+            outputPath, datasetName, filePath, rows, vectors, vectorizedColumns, preservedColumns, progress);
+
+        progress?.Report((rows.Count, rows.Count, "Done."));
+        _logger.LogInformation(
+            "Wrote {RowCount} vectors for '{Name}' to {OutputPath}.", rows.Count, datasetName, outputPath);
+        return rows.Count;
+    }
+
+    /// <summary>Checks the request, reads the workbook's rows and vectorizes them (one vector per row).</summary>
+    private async Task<(List<Dictionary<string, string>> Rows, List<float[]> Vectors)> ReadAndVectorizeAsync(
+        string filePath,
+        string datasetName,
+        List<string> vectorizedColumns,
+        IProgress<(int current, int total, string message)>? progress)
+    {
+        ArgumentNullException.ThrowIfNull(vectorizedColumns);
+        if (string.IsNullOrWhiteSpace(datasetName))
+            throw new ArgumentException("A dataset name is required.", nameof(datasetName));
+        if (vectorizedColumns.Count == 0)
+            throw new ArgumentException("Select at least one column to vectorize.", nameof(vectorizedColumns));
+
+        progress?.Report((0, 0, "Reading Excel file..."));
+        var rows = await _excelService.ReadRowsAsync(filePath);
+
+        if (rows.Count == 0)
+            throw new InvalidOperationException("The worksheet contains a header row but no data rows.");
+
+        progress?.Report((0, rows.Count, $"Vectorizing {rows.Count:N0} rows..."));
+        var vectors = _vectorizationService.VectorizeRows(rows, vectorizedColumns);
+        return (rows, vectors);
     }
 
     // ── Dataset listing ───────────────────────────────────────────────────
