@@ -9,6 +9,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VectorMatchEngine.Data", "V
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VectorMatchEngine.UI", "VectorMatchEngine.UI\VectorMatchEngine.UI.csproj", "{412A40BD-CFE0-44B2-80B6-425F7C539B52}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SAMPLES", "SAMPLES", "{D194EDBB-38E3-4651-A91C-E4B912F1619B}"
+	ProjectSection(SolutionItems) = preProject
+		SAMPLES\ClaimsSample2025.xlsx = SAMPLES\ClaimsSample2025.xlsx
+		SAMPLES\GenerateClaimsSample.cs = SAMPLES\GenerateClaimsSample.cs
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

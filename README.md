@@ -138,6 +138,27 @@ job cannot be deleted — delete the job first.
 
 ---
 
+## Sample data
+
+`SAMPLES/ClaimsSample2025.xlsx` is a contrived medical claims extract to try the app on: 10,000 claim lines
+in 4,743 claims for 500 members, with service dates from January to December 2025. Each line carries the
+member's identifying columns (first, last and middle initial, gender, DOB, street, city, state, ZIP, SSN,
+insurance ID, phone) and the claim's (claim ID and line, type and status, service start and end dates,
+HCPCS/CPT code, primary and secondary ICD-10 diagnoses, units, unit price, total cost, allowed, deductible,
+coinsurance, copay, plan paid, place of service, rendering and billing provider, received and processed
+dates). Members have anywhere from 1 to over 100 lines.
+
+**Every person and identifier in it is invented.** SSNs start 900-999, which are never issued; phone
+numbers are in the 555-0100 to 555-0199 range reserved for fiction; insurance, claim and provider IDs are
+random with made-up prefixes. The codes are real code values, so the lines look like real claims. Its
+`About` sheet says the same, and how the amounts add up.
+
+To try it, import the sheet and vectorize the member columns (name, DOB, street, ZIP, for instance): every
+line for the same member gets the same vector, so matching the sheet against itself, or against a second
+extract of the same members, finds them. `SAMPLES/GenerateClaimsSample.cs` makes the workbook
+(`dotnet run SAMPLES/GenerateClaimsSample.cs` from the repository root); its seed is fixed, so it makes
+the same rows every time.
+
 ## How it works
 
 ### Vectorization

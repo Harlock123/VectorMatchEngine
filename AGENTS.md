@@ -49,6 +49,10 @@ dotnet restore -p:ContinuousIntegrationBuild=true    # fails if the packages dri
     the connection string on every call.
   - `Navigation/`, `Services/` (dialogs, `ExpandoPropertyAccessorPlugin`), `ViewModels/`, `Views/`, `Styles/`.
 
+- `SAMPLES/`: `ClaimsSample2025.xlsx`, contrived claims data to test with, and `GenerateClaimsSample.cs`,
+  the .NET file-based script that makes it (fixed seed). Keep its identifiers unmistakably fake (9xx SSNs,
+  555-01xx phones). It is a solution folder, not a project, so the build ignores it.
+
 ## Rules that keep it working
 
 - **Settings live outside the repo**, in `SpecialFolder.ApplicationData` under `VectorMatchEngine/settings.json`.
