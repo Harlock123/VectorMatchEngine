@@ -40,6 +40,7 @@
             <DataGridTextColumn Header="Preserved Columns" Width="220"
                                 Binding="{Binding PreservedColumnsDisplay,
                                           Converter={x:Static conv:TruncateConverter.Instance}}"/>
+            <DataGridTextColumn Header="Encoding" Width="200" Binding="{Binding EncodingDisplay}"/>
             <DataGridTextColumn Header="Created" Width="150"
                                 Binding="{Binding CreatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}"/>
             <DataGridTemplateColumn Header="" Width="70">

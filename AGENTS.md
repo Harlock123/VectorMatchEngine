@@ -35,7 +35,10 @@ dotnet restore -p:ContinuousIntegrationBuild=true    # fails if the packages dri
     Step 1), streaming too, and copes with Excel's re-saved form (shared strings, cell references). It
     refuses vectors whose size or the About sheet's `Method` (`VectorSheetExportService.MethodDescription`)
     differ from this version's; keep that string in step with the vectorizer.
-  - `Services/VectorizationService.cs`: the ML.NET trigram pipeline; `NumberOfBits` sets the vector size.
+  - `Services/VectorizationService.cs`: the ML.NET trigram pipeline; `NumberOfBits` sets the vector size. With
+    `VectorizeOptions` (a matching key, sounds-alike columns) it runs the keyed encoding instead.
+  - `Services/VectorKey.cs` (passphrase → key and fingerprint) and `Services/Metaphone.cs` (sounds-alike codes);
+    `Models/VectorEncoding.cs` describes an encoding and when two can be matched.
   - `Services/SimilarityService.cs`: the all-pairs dot-product comparison.
   - `Models/`: plain request and result types.
 - `VectorMatchEngine.Data/`: EF Core.
@@ -59,6 +62,14 @@ dotnet restore -p:ContinuousIntegrationBuild=true    # fails if the packages dri
   Never commit a real connection string.
 - **Vectors must share one space.** Trigrams are hashed into a fixed space so datasets imported separately can be
   compared. Changing `NumberOfBits` makes old datasets unmatchable with new ones.
+- **Encodings must match.** A dataset records how its vectors were made (`VectorEncoding`: `trigram`, the original
+  ML.NET pipeline, or `keyed-trigram`, HMAC-SHA256 under a `VectorKey` plus Metaphone codes for sounds-alike
+  columns), and `DataService.RunMatchJobAsync` refuses to compare different ones. Anything that changes the output
+  of either encoding (normalization, the trigram markers, the HMAC feature prefixes `t|`/`p|`, the Metaphone rules,
+  the code weighting, the PBKDF2 salt or rounds) makes existing keyed datasets and vectors workbooks unmatchable,
+  so it needs a new encoding name rather than a silent change. Keep `VectorSheetExportService.MethodDescription`
+  in step.
+- **Never store the matching key.** Only `VectorKey.Fingerprint` goes into the database or a workbook.
 - **Repositories take `IDbContextFactory`, not `AppDbContext`.** They are singletons, so they create a context per
   call; this is also what lets a new connection string apply without a restart.
 - **Schema changes need a migration** in `VectorMatchEngine.Data/Migrations/`; the app applies migrations at

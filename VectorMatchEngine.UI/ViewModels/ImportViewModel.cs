@@ -3,6 +3,8 @@ using System.ComponentModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using VectorMatchEngine.Core.Models;
+using VectorMatchEngine.Core.Services;
 using VectorMatchEngine.Data;
 using VectorMatchEngine.UI.Navigation;
 using VectorMatchEngine.UI.Services;
@@ -56,7 +58,58 @@ public partial class ImportViewModel : ObservableObject
 
     [ObservableProperty] private string _vectorWorkbookSummary = string.Empty;
 
+    /// <summary>The matching key's passphrase. Never stored: only its fingerprint is kept with the dataset.</summary>
+    [ObservableProperty] private string _matchingKey = string.Empty;
+
+    [ObservableProperty] private string _keyStatus = NoKeyStatus;
+
+    /// <summary>Write the readable Vectorized Text column into the vectors workbook too.</summary>
+    [ObservableProperty] private bool _includeVectorizedText;
+
+    private const string NoKeyStatus =
+        "No key: anyone with this app can rebuild these vectors from guesses (names, dates of birth). " +
+        "Enter a passphrase, and use the same one for every dataset you'll match.";
+    private int _keyVersion;
+
     public bool IsColumnWorkbook => !IsVectorWorkbook;
+
+    /// <summary>Columns that are both vectorized and preserved: their values are stored readable.</summary>
+    public string PlaintextWarning
+    {
+        get
+        {
+            var both = ColumnSelections.Where(c => c.IsVectorized && c.IsPreserved).Select(c => c.Name).ToList();
+            return both.Count == 0
+                ? string.Empty
+                : $"Vectorized and also preserved, so stored readable: {string.Join(", ", both)}. " +
+                  "Untick Preserve for any you want only in the vector.";
+        }
+    }
+
+    public bool HasPlaintextWarning => PlaintextWarning.Length > 0;
+
+    /// <summary>Shows the key's fingerprint as it's typed (deriving it takes a moment, so it's done off the UI thread).</summary>
+    partial void OnMatchingKeyChanged(string value)
+    {
+        int version = ++_keyVersion;
+        if (string.IsNullOrEmpty(value))
+        {
+            KeyStatus = NoKeyStatus;
+            return;
+        }
+        KeyStatus = "Working out the key's fingerprint...";
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(250);
+            if (version != _keyVersion) return null;
+            return VectorKey.FromPassphrase(value)?.Fingerprint;
+        }).ContinueWith(t =>
+        {
+            if (version == _keyVersion && t.Result is { } fingerprint)
+                KeyStatus = $"Key fingerprint {fingerprint}. Datasets can only be matched if their fingerprints are the same; " +
+                            "the passphrase itself isn't stored anywhere, so keep it safe.";
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
 
     /// <summary>The inverse of <see cref="WriteToSpreadsheet"/>, for the other radio button.</summary>
     public bool WriteToDatabase
@@ -170,6 +223,8 @@ public partial class ImportViewModel : ObservableObject
             }
 
             CurrentStep = 2;
+            OnPropertyChanged(nameof(PlaintextWarning));
+            OnPropertyChanged(nameof(HasPlaintextWarning));
             ProcessCommand.NotifyCanExecuteChanged();
         }
         catch (Exception ex)
@@ -189,6 +244,11 @@ public partial class ImportViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(CanProcess));
             ProcessCommand.NotifyCanExecuteChanged();
+        }
+        if (e.PropertyName is nameof(ColumnSelectionItem.IsVectorized) or nameof(ColumnSelectionItem.IsPreserved))
+        {
+            OnPropertyChanged(nameof(PlaintextWarning));
+            OnPropertyChanged(nameof(HasPlaintextWarning));
         }
     }
 
@@ -229,6 +289,9 @@ public partial class ImportViewModel : ObservableObject
         var preserved = ColumnSelections.Where(c => c.IsPreserved).Select(c => c.Name).ToList();
         var filePath = SelectedFilePath;
         var name = DatasetName;
+        var soundsAlike = ColumnSelections.Where(c => c.IsVectorized && c.IsSoundsAlike).Select(c => c.Name).ToList();
+        var passphrase = MatchingKey;
+        var includeText = IncludeVectorizedText;
         var toSpreadsheet = WriteToSpreadsheet && !IsVectorWorkbook;
         var fromVectorWorkbook = IsVectorWorkbook;
         var outputPath = OutputFilePath;
@@ -263,20 +326,24 @@ public partial class ImportViewModel : ObservableObject
             }
             else if (toSpreadsheet)
             {
+                var options = await Task.Run(() => new VectorizeOptions(VectorKey.FromPassphrase(passphrase), soundsAlike));
                 var rowCount = await Task.Run(() => _dataService.VectorizeToSpreadsheetAsync(
-                    filePath, name, vectorized, preserved, outputPath, progress));
+                    filePath, name, vectorized, preserved, outputPath, progress, options, includeText));
 
                 SuccessSummary =
                     $"{rowCount:N0} rows vectorized and written to {Path.GetFileName(outputPath)} " +
-                    $"({VectorMatchEngine.Core.Services.VectorizationService.VectorDimensions} vector columns), in {Path.GetDirectoryName(outputPath)}.";
+                    $"({VectorizationService.VectorDimensions} vector columns), in {Path.GetDirectoryName(outputPath)}. " +
+                    $"Encoding: {options.Encoding(vectorized).Display}.";
             }
             else
             {
+                var options = await Task.Run(() => new VectorizeOptions(VectorKey.FromPassphrase(passphrase), soundsAlike));
                 var dataset = await Task.Run(() => _dataService.IngestExcelAsync(
-                    filePath, name, vectorized, preserved, progress));
+                    filePath, name, vectorized, preserved, progress, options));
 
                 SuccessSummary =
-                    $"{dataset.RowCount:N0} records ingested. Vector dimensions: {dataset.VectorDimensions}.";
+                    $"{dataset.RowCount:N0} records ingested. Vector dimensions: {dataset.VectorDimensions}. " +
+                    $"Encoding: {options.Encoding(vectorized).Display}.";
                 SavedToDatabase = true;
             }
 

@@ -17,7 +17,7 @@ namespace VectorMatchEngine.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.30")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -33,10 +33,19 @@ namespace VectorMatchEngine.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("Encoding")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<string>("FileName")
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("KeyFingerprint")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -49,6 +58,10 @@ namespace VectorMatchEngine.Data.Migrations
 
                     b.Property<int>("RowCount")
                         .HasColumnType("int");
+
+                    b.Property<string>("SoundsAlikeColumnsJson")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR(MAX)");
 
                     b.Property<int>("VectorDimensions")
                         .HasColumnType("int");

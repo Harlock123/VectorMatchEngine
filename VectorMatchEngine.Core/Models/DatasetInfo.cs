@@ -11,9 +11,11 @@ public class DatasetInfo
     public List<string> PreservedColumns { get; set; } = new();
     public int VectorDimensions { get; set; }
     public DateTime CreatedAt { get; set; }
+    public VectorEncoding Encoding { get; set; } = VectorEncoding.Original;
 
     public string VectorizedColumnsDisplay => string.Join(", ", VectorizedColumns);
     public string PreservedColumnsDisplay => string.Join(", ", PreservedColumns);
+    public string EncodingDisplay => Encoding.Display;
 
     public override string ToString() => Name;
 }

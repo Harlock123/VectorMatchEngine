@@ -34,12 +34,13 @@
     </Border>
 
     <!-- ── Step 2: configure columns ────────────────────────────────── -->
-    <Grid Grid.Row="1" IsVisible="{Binding IsStep2}" RowDefinitions="Auto,*,Auto">
-      <Border Grid.Row="0" Classes="card" Margin="0,0,0,12">
+    <!-- Settings on the left (scrolling if the window is short), the column list filling the right. -->
+    <Grid Grid.Row="1" IsVisible="{Binding IsStep2}" RowDefinitions="*,Auto" ColumnDefinitions="460,*">
+      <ScrollViewer Grid.Row="0" Grid.Column="0" Margin="0,0,12,0" VerticalScrollBarVisibility="Auto">
+      <Border Classes="card" VerticalAlignment="Top">
         <StackPanel Spacing="10">
           <TextBlock Classes="h2" Text="Dataset name"/>
-          <TextBox Text="{Binding DatasetName, Mode=TwoWay}" MaxWidth="480"
-                   HorizontalAlignment="Left" Watermark="e.g. Customers 2026 Q1"/>
+          <TextBox Text="{Binding DatasetName, Mode=TwoWay}" Watermark="e.g. Customers 2026 Q1"/>
           <StackPanel Spacing="6" IsVisible="{Binding IsVectorWorkbook}">
             <TextBlock Classes="h2" Text="A vectors workbook" Margin="0,6,0,0"/>
             <TextBlock Classes="body" TextWrapping="Wrap" Text="{Binding VectorWorkbookSummary}"/>
@@ -47,30 +48,41 @@
                        Text="Its vectors are loaded into the database as they are, without vectorizing again, so it can be used in match jobs like any imported dataset."/>
           </StackPanel>
           <TextBlock Classes="subtle" TextWrapping="Wrap" IsVisible="{Binding IsColumnWorkbook}"
-                     Text="Vectorize: the column's text is embedded into the similarity vector. Preserve: the value is stored verbatim so it can be shown and exported. A column can be both."/>
+                     Text="Vectorize: the column's text is embedded into the similarity vector. Preserve: the value is stored verbatim so it can be shown and exported (ticking Vectorize unticks it; a column can still be both). Sounds alike: names are encoded by how they sound, so Smith and Smyth, or Jon and John, count as the same."/>
+
+          <StackPanel Spacing="6" IsVisible="{Binding IsColumnWorkbook}">
+            <TextBlock Classes="h2" Text="Matching key" Margin="0,6,0,0"/>
+            <TextBox Text="{Binding MatchingKey, Mode=TwoWay}" PasswordChar="&#x2022;"
+                     Watermark="A passphrase, shared only with whoever vectorizes the other dataset"/>
+            <TextBlock Classes="subtle" TextWrapping="Wrap" Text="{Binding KeyStatus}"/>
+          </StackPanel>
 
           <StackPanel Spacing="10" IsVisible="{Binding IsColumnWorkbook}">
           <TextBlock Classes="h2" Text="Write the vectors to" Margin="0,6,0,0"/>
-          <StackPanel Orientation="Horizontal" Spacing="20">
+          <StackPanel Spacing="4">
             <RadioButton Content="The database (for matching)"
                          IsChecked="{Binding WriteToDatabase, Mode=TwoWay}"/>
             <RadioButton Content="Another spreadsheet"
                          IsChecked="{Binding WriteToSpreadsheet, Mode=TwoWay}"/>
           </StackPanel>
           <StackPanel Spacing="6" IsVisible="{Binding WriteToSpreadsheet}">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-              <TextBox Text="{Binding OutputFilePath}" IsReadOnly="True" MinWidth="480"
-                       Watermark="No output file chosen"/>
-              <Button Classes="secondary" Content="Choose File..." Command="{Binding BrowseOutputFileCommand}"/>
-            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBox Grid.Column="0" Text="{Binding OutputFilePath}" IsReadOnly="True" Watermark="No output file chosen"/>
+              <Button Grid.Column="1" Classes="secondary" Margin="8,0,0,0" Content="Choose File..."
+                      Command="{Binding BrowseOutputFileCommand}"/>
+            </Grid>
+            <CheckBox IsChecked="{Binding IncludeVectorizedText, Mode=TwoWay}">
+              <TextBlock TextWrapping="Wrap" Text="Also write the vectorized text (readable, so it shows what each vector was made from)"/>
+            </CheckBox>
             <TextBlock Classes="subtle" TextWrapping="Wrap"
-                       Text="A new workbook: a Vectors sheet with each row's preserved columns, the text that was vectorized and one column per vector dimension (V0 to V511), plus an About sheet. Nothing is saved to the database; to match these rows later, import this workbook (it's recognised, and its vectors are loaded as they are)."/>
+                       Text="A new workbook: a Vectors sheet with each row's preserved columns and one column per vector dimension (V0 to V511), plus an About sheet. Nothing is saved to the database; to match these rows later, import this workbook (it's recognised, and its vectors are loaded as they are)."/>
           </StackPanel>
           </StackPanel>
         </StackPanel>
       </Border>
+      </ScrollViewer>
 
-      <Border Grid.Row="1" Classes="card" Padding="0" IsVisible="{Binding IsColumnWorkbook}">
+      <Border Grid.Row="0" Grid.Column="1" Classes="card" Padding="0" IsVisible="{Binding IsColumnWorkbook}">
         <DataGrid ItemsSource="{Binding ColumnSelections}"
                   AutoGenerateColumns="False"
                   CanUserReorderColumns="False"
@@ -81,16 +93,21 @@
             <DataGridTextColumn Header="Column" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
             <DataGridCheckBoxColumn Header="Vectorize" Binding="{Binding IsVectorized, Mode=TwoWay}" Width="120"/>
             <DataGridCheckBoxColumn Header="Preserve"  Binding="{Binding IsPreserved,  Mode=TwoWay}" Width="120"/>
+            <DataGridCheckBoxColumn Header="Sounds alike" Binding="{Binding IsSoundsAlike, Mode=TwoWay}" Width="130"/>
           </DataGrid.Columns>
         </DataGrid>
       </Border>
 
-      <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10" Margin="0,14,0,0">
+      <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Spacing="8" Margin="0,14,0,0">
+      <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PlaintextWarning}"
+                 IsVisible="{Binding HasPlaintextWarning}"/>
+      <StackPanel Orientation="Horizontal" Spacing="10">
         <Button Classes="secondary" Content="&#x2190;  Back" Command="{Binding GoBackCommand}"/>
         <Button Classes="primary" Content="Process Dataset" Command="{Binding ProcessCommand}"/>
-        <TextBlock Classes="subtle" VerticalAlignment="Center"
+        <TextBlock Classes="subtle" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="700"
                    Text="Select at least one column to vectorize, enter a name, and choose an output file if writing to a spreadsheet."
                    IsVisible="{Binding IsColumnWorkbook}"/>
+      </StackPanel>
       </StackPanel>
     </Grid>
 

@@ -7,8 +7,8 @@ namespace VectorMatchEngine.Core.Services;
 
 /// <summary>
 /// Reads a vectors workbook (what <see cref="VectorSheetExportService"/> writes) back, so its vectors can be loaded
-/// into the database without vectorizing again. It is recognised by its Vectors sheet, whose header has a
-/// "Vectorized Text" column followed by V0, V1 and so on.
+/// into the database without vectorizing again. It is recognised by its Vectors sheet, whose header has V0, V1 and
+/// so on (after the preserved columns and, if it was written, a "Vectorized Text" column).
 ///
 /// Like the writer, it streams: the sheet is read straight from the zip with an <see cref="XmlReader"/>, since
 /// ClosedXML would hold every one of its 500-plus cells a row in memory. It reads what Excel or another program
@@ -53,7 +53,7 @@ public class VectorSheetImportService
             throw new InvalidOperationException($"'{Path.GetFileName(filePath)}' has no {VectorSheetExportService.VectorsSheetName} sheet.");
         var info = Inspect(package, out var layout)
                    ?? throw new InvalidOperationException(
-                       $"The {VectorSheetExportService.VectorsSheetName} sheet's header isn't a vectors header ('{TextHeader}', then V0, V1 …).");
+                       $"The {VectorSheetExportService.VectorsSheetName} sheet's header isn't a vectors header (V0, V1 …).");
 
         int total = info.RowCount ?? 0;
         var preserved = new List<Dictionary<string, string>>(total);
@@ -111,14 +111,16 @@ public class VectorSheetImportService
         if (header is null)
             return null;
 
-        int textColumn = header.FindIndex(h => string.Equals(h?.Trim(), TextHeader, StringComparison.OrdinalIgnoreCase));
-        if (textColumn < 0)
+        int firstVector = header.FindIndex(h => string.Equals(h?.Trim(), "V0", StringComparison.OrdinalIgnoreCase));
+        if (firstVector < 0)
             return null;
         int dimensions = 0;
-        while (string.Equals(Cell(header, textColumn + 1 + dimensions)?.Trim(), $"V{dimensions}", StringComparison.OrdinalIgnoreCase))
+        while (string.Equals(Cell(header, firstVector + dimensions)?.Trim(), $"V{dimensions}", StringComparison.OrdinalIgnoreCase))
             dimensions++;
-        if (dimensions == 0)
-            return null;
+        // The readable columns end at the vectors, or at the Vectorized Text column just before them.
+        int textColumn = string.Equals(Cell(header, firstVector - 1)?.Trim(), TextHeader, StringComparison.OrdinalIgnoreCase)
+            ? firstVector - 1
+            : firstVector;
 
         var about = package.AboutEntry is null
             ? new Dictionary<string, string>()
@@ -127,15 +129,25 @@ public class VectorSheetImportService
                 .GroupBy(r => Cell(r.Cells, 0)!.Trim(), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => Cell(g.First().Cells, 1)?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase);
 
+        // An ordinary workbook might have a column called V0: without the full set of vector columns, it counts as
+        // a vectors workbook only if it has the About sheet too.
+        if (dimensions != VectorizationService.VectorDimensions && package.AboutEntry is null)
+            return null;
         if (dimensions != VectorizationService.VectorDimensions)
             throw new InvalidOperationException(
                 $"This workbook's vectors have {dimensions} dimensions, but this version makes {VectorizationService.VectorDimensions}, " +
                 "so they couldn't be matched with its datasets. Import the source workbook again instead.");
+        // Workbooks from before matching keys have no Encoding line: those used the original encoding.
+        var encodingMethod = about.TryGetValue("Encoding", out var e) && e.Length > 0 ? e : VectorEncoding.Plain;
+        if (encodingMethod is not (VectorEncoding.Plain or VectorEncoding.Keyed))
+            throw new InvalidOperationException(
+                $"This workbook's vectors use an encoding this version doesn't know ({encodingMethod}). Import the source workbook again instead.");
+        var expectedMethod = VectorSheetExportService.MethodDescription(encodingMethod);
         if (about.TryGetValue("Method", out var method) && method.Length > 0
-            && !string.Equals(method, VectorSheetExportService.MethodDescription, StringComparison.OrdinalIgnoreCase))
+            && !string.Equals(method, expectedMethod, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
                 $"This workbook's vectors were made another way ({method}); this version uses " +
-                $"{VectorSheetExportService.MethodDescription}. Import the source workbook again instead.");
+                $"{expectedMethod}. Import the source workbook again instead.");
 
         // The columns before the text are the preserved ones, after a leading Row column.
         int first = string.Equals(Cell(header, 0)?.Trim(), "Row", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
@@ -155,14 +167,20 @@ public class VectorSheetImportService
             }
             preserved.Add((name, c));
         }
-        layout = new Layout(preserved, textColumn + 1);
+        layout = new Layout(preserved, firstVector);
 
         string About(string key) => about.TryGetValue(key, out var v) ? v : string.Empty;
         var vectorized = About("Vectorized columns")
             .Split(", ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         int? rows = int.TryParse(About("Rows"), NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var n) ? n : null;
+        var fingerprint = About("Key fingerprint");
+        var soundsAlike = About("Sounds-alike columns")
+            .Split(", ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        var encoding = encodingMethod == VectorEncoding.Plain
+            ? VectorEncoding.Original
+            : new VectorEncoding(VectorEncoding.Keyed, fingerprint.Length > 0 ? fingerprint : null, soundsAlike);
         return new VectorWorkbookInfo(About("Dataset"), About("Source file"), vectorized,
-            preserved.Select(p => p.Name).ToList(), dimensions, rows);
+            preserved.Select(p => p.Name).ToList(), dimensions, rows, encoding);
     }
 
     private static string? Cell(List<string?> cells, int column) => column >= 0 && column < cells.Count ? cells[column] : null;

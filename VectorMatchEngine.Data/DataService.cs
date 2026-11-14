@@ -79,10 +79,12 @@ public class DataService
         string datasetName,
         List<string> vectorizedColumns,
         List<string> preservedColumns,
-        IProgress<(int current, int total, string message)>? progress = null)
+        IProgress<(int current, int total, string message)>? progress = null,
+        VectorizeOptions? options = null)
     {
         preservedColumns ??= new List<string>();
-        var (rows, vectors) = await ReadAndVectorizeAsync(filePath, datasetName, vectorizedColumns, progress);
+        options ??= VectorizeOptions.None;
+        var (rows, vectors) = await ReadAndVectorizeAsync(filePath, datasetName, vectorizedColumns, options, progress);
 
         var preserved = rows
             .Select(row => preservedColumns.ToDictionary(
@@ -91,7 +93,8 @@ public class DataService
             .ToList();
 
         return await SaveDatasetAsync(
-            datasetName, Path.GetFileName(filePath), vectorizedColumns, preservedColumns, preserved, vectors, progress);
+            datasetName, Path.GetFileName(filePath), vectorizedColumns, preservedColumns, preserved, vectors,
+            options.Encoding(vectorizedColumns), progress);
     }
 
     /// <summary>
@@ -126,7 +129,7 @@ public class DataService
 
         return await SaveDatasetAsync(
             datasetName, fileName, info.VectorizedColumns, info.PreservedColumns, workbook.Preserved, workbook.Vectors,
-            progress);
+            info.Encoding, progress);
     }
 
     /// <summary>Stores a dataset: one record per row, with its vector and preserved values.</summary>
@@ -137,6 +140,7 @@ public class DataService
         List<string> preservedColumns,
         List<Dictionary<string, string>> preserved,
         List<float[]> vectors,
+        VectorEncoding encoding,
         IProgress<(int current, int total, string message)>? progress)
     {
         int count = vectors.Count;
@@ -148,7 +152,10 @@ public class DataService
             VectorizedColumnsJson = JsonSerializer.Serialize(vectorizedColumns),
             PreservedColumnsJson = JsonSerializer.Serialize(preservedColumns),
             VectorDimensions = count > 0 ? vectors[0].Length : 0,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            Encoding = encoding.Method,
+            KeyFingerprint = encoding.KeyFingerprint,
+            SoundsAlikeColumnsJson = JsonSerializer.Serialize(encoding.SoundsAlikeColumns)
         };
 
         var records = new List<DatasetRecord>(count);
@@ -190,15 +197,19 @@ public class DataService
         List<string> vectorizedColumns,
         List<string> preservedColumns,
         string outputPath,
-        IProgress<(int current, int total, string message)>? progress = null)
+        IProgress<(int current, int total, string message)>? progress = null,
+        VectorizeOptions? options = null,
+        bool includeVectorizedText = false)
     {
         preservedColumns ??= new List<string>();
+        options ??= VectorizeOptions.None;
         if (string.IsNullOrWhiteSpace(outputPath))
             throw new ArgumentException("Choose a file to write the vectors to.", nameof(outputPath));
 
-        var (rows, vectors) = await ReadAndVectorizeAsync(filePath, datasetName, vectorizedColumns, progress);
+        var (rows, vectors) = await ReadAndVectorizeAsync(filePath, datasetName, vectorizedColumns, options, progress);
         await _vectorSheetExportService.ExportVectorsAsync(
-            outputPath, datasetName, filePath, rows, vectors, vectorizedColumns, preservedColumns, progress);
+            outputPath, datasetName, filePath, rows, vectors, vectorizedColumns, preservedColumns, progress,
+            options, includeVectorizedText);
 
         progress?.Report((rows.Count, rows.Count, "Done."));
         _logger.LogInformation(
@@ -211,6 +222,7 @@ public class DataService
         string filePath,
         string datasetName,
         List<string> vectorizedColumns,
+        VectorizeOptions options,
         IProgress<(int current, int total, string message)>? progress)
     {
         ArgumentNullException.ThrowIfNull(vectorizedColumns);
@@ -226,7 +238,7 @@ public class DataService
             throw new InvalidOperationException("The worksheet contains a header row but no data rows.");
 
         progress?.Report((0, rows.Count, $"Vectorizing {rows.Count:N0} rows..."));
-        var vectors = _vectorizationService.VectorizeRows(rows, vectorizedColumns);
+        var vectors = _vectorizationService.VectorizeRows(rows, vectorizedColumns, options);
         return (rows, vectors);
     }
 
@@ -260,6 +272,7 @@ public class DataService
 
         try
         {
+            await CheckEncodingsMatchAsync(request.DatasetAId, request.DatasetBId);
             var datasetA = await LoadVectorsAsync(request.DatasetAId);
             var datasetB = await LoadVectorsAsync(request.DatasetBId);
 
@@ -306,6 +319,29 @@ public class DataService
             throw;
         }
     }
+
+    /// <summary>Refuses to match datasets whose vectors were made differently: their scores would mean nothing.</summary>
+    private async Task CheckEncodingsMatchAsync(int datasetAId, int datasetBId)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var datasets = await context.Datasets.AsNoTracking()
+            .Where(d => d.Id == datasetAId || d.Id == datasetBId)
+            .ToListAsync();
+        var a = datasets.FirstOrDefault(d => d.Id == datasetAId);
+        var b = datasets.FirstOrDefault(d => d.Id == datasetBId);
+        if (a is null || b is null)
+            throw new InvalidOperationException("One of the selected datasets no longer exists.");
+        if (EncodingOf(a).IncompatibilityWith(EncodingOf(b)) is { } reason)
+            throw new InvalidOperationException(
+                $"'{a.Name}' and '{b.Name}' can't be matched: {reason}. Import them again the same way " +
+                "(the same matching key and sounds-alike settings).");
+    }
+
+    /// <summary>How a dataset's vectors were made.</summary>
+    public static VectorEncoding EncodingOf(Dataset dataset) => new(
+        string.IsNullOrEmpty(dataset.Encoding) ? VectorEncoding.Plain : dataset.Encoding,
+        string.IsNullOrEmpty(dataset.KeyFingerprint) ? null : dataset.KeyFingerprint,
+        DeserializeColumns(dataset.SoundsAlikeColumnsJson));
 
     /// <summary>Loads a dataset's records as (id, vector, preserved) tuples, without navigations.</summary>
     private async Task<List<(long id, float[] vector, Dictionary<string, string> preserved)>> LoadVectorsAsync(int datasetId)
@@ -413,7 +449,8 @@ public class DataService
         VectorizedColumns = DeserializeColumns(dataset.VectorizedColumnsJson),
         PreservedColumns = DeserializeColumns(dataset.PreservedColumnsJson),
         VectorDimensions = dataset.VectorDimensions,
-        CreatedAt = dataset.CreatedAt
+        CreatedAt = dataset.CreatedAt,
+        Encoding = EncodingOf(dataset)
     };
 
     public static List<string> DeserializeColumns(string? json)

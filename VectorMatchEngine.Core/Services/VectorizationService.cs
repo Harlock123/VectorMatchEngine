@@ -1,10 +1,15 @@
+using System.Buffers.Binary;
+using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using Microsoft.ML.Transforms;
 using Microsoft.ML.Transforms.Text;
+using VectorMatchEngine.Core.Models;
 
 namespace VectorMatchEngine.Core.Services;
 
@@ -16,6 +21,12 @@ namespace VectorMatchEngine.Core.Services;
 /// meanings to the same vector index in different datasets, so vectors from Dataset A and
 /// Dataset B could not be compared. Hashing gives every dataset the same axes, which is what
 /// makes cross-dataset cosine similarity meaningful.
+///
+/// That fixed space is public, though: anyone with ML.NET can vectorize guesses (names, dates of birth) and find the
+/// ones that match a vector. So with a matching key (<see cref="VectorKey"/>), or with sounds-alike columns, rows
+/// are vectorized another way (<see cref="VectorEncoding.Keyed"/>): each trigram is hashed with HMAC-SHA256 under
+/// the key, which nobody without it can reproduce, and sounds-alike columns contribute their words' Metaphone codes
+/// instead of their spelling. Without either, the original ML.NET pipeline runs, so older datasets still match.
 /// </summary>
 public class VectorizationService
 {
@@ -39,10 +50,19 @@ public class VectorizationService
     /// </summary>
     public List<float[]> VectorizeRows(
         List<Dictionary<string, string>> rows,
-        List<string> vectorizedColumns)
+        List<string> vectorizedColumns,
+        VectorizeOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(rows);
         ArgumentNullException.ThrowIfNull(vectorizedColumns);
+        options ??= VectorizeOptions.None;
+        if (!options.UsesOriginal)
+        {
+            if (vectorizedColumns.Count == 0)
+                throw new ArgumentException(
+                    "At least one column must be selected for vectorization.", nameof(vectorizedColumns));
+            return VectorizeKeyed(rows, vectorizedColumns, options);
+        }
 
         var result = new List<float[]>(rows.Count);
         if (rows.Count == 0)
@@ -116,6 +136,114 @@ public class VectorizationService
         }
 
         return result;
+    }
+
+    // ── The keyed encoding ────────────────────────────────────────────────
+
+    /// <summary>
+    /// <see cref="VectorEncoding.Keyed"/>: the spelled columns' text, normalized like the ML.NET pipeline (lower case,
+    /// no accents or punctuation), as marker-wrapped character trigrams; each sounds-alike column's words as the
+    /// trigrams of their Metaphone codes; every trigram hashed with HMAC-SHA256 under the key (an empty key without
+    /// one) into the 2^<see cref="NumberOfBits"/> buckets; then counted and L2-normalized.
+    /// </summary>
+    private static List<float[]> VectorizeKeyed(
+        List<Dictionary<string, string>> rows, List<string> vectorizedColumns, VectorizeOptions options)
+    {
+        var key = options.Key?.Bytes ?? Array.Empty<byte>();
+        var spelled = vectorizedColumns.Where(c => !options.SoundsAlikeColumns.Contains(c)).ToList();
+        var sounded = vectorizedColumns.Where(c => options.SoundsAlikeColumns.Contains(c)).ToList();
+        var buckets = new Dictionary<string, int>(StringComparer.Ordinal);
+        int Bucket(string feature)
+        {
+            if (!buckets.TryGetValue(feature, out var bucket))
+            {
+                var hash = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(feature));
+                bucket = (int)(BinaryPrimitives.ReadUInt32LittleEndian(hash) % VectorDimensions);
+                buckets[feature] = bucket;
+            }
+            return bucket;
+        }
+
+        var result = new List<float[]>(rows.Count);
+        foreach (var row in rows)
+        {
+            var vector = new float[VectorDimensions];
+            foreach (var gram in Trigrams(NormalizeForKeyed(BuildCombinedText(row, spelled))))
+                vector[Bucket("t|" + gram)]++;
+            // A code is shorter than its word (JN for John), so its trigrams are weighted to carry about the share
+            // of the vector a word's own would (a word is typically its code's length plus two). The weight depends
+            // on the code alone, so names that sound alike are encoded identically.
+            foreach (var column in sounded)
+                foreach (var code in SoundCodes(row.GetValueOrDefault(column, string.Empty)))
+                {
+                    var grams = Trigrams(code).ToList();
+                    float weight = (float)Math.Sqrt((code.Length + 2.0) / grams.Count);
+                    foreach (var gram in grams)
+                        vector[Bucket("p|" + gram)] += weight;
+                }
+
+            double length = Math.Sqrt(vector.Sum(x => (double)x * x));
+            if (length > 0)
+                for (int d = 0; d < vector.Length; d++)
+                    vector[d] = (float)(vector[d] / length);
+            result.Add(vector);
+        }
+        return result;
+    }
+
+    /// <summary>A sounds-alike column's words as Metaphone codes (a word with no letters, such as a number, as itself).</summary>
+    public static IEnumerable<string> SoundCodes(string value) =>
+        NormalizeForKeyed(value).Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(word => Metaphone.Encode(word) is { Length: > 0 } code ? code : word);
+
+    /// <summary>Lower case, accents and punctuation dropped, whitespace collapsed (what ML.NET's NormalizeText does here).</summary>
+    private static string NormalizeForKeyed(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        bool space = false;
+        foreach (var ch in text.Normalize(NormalizationForm.FormD))
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(ch);
+            if (category == UnicodeCategory.NonSpacingMark)
+                continue;
+            if (char.IsWhiteSpace(ch))
+            {
+                space = sb.Length > 0;
+                continue;
+            }
+            if (!char.IsLetterOrDigit(ch))
+                continue;
+            if (space) { sb.Append(' '); space = false; }
+            sb.Append(char.ToLowerInvariant(ch));
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Character trigrams of a text wrapped in start and end markers (a blank text has none).</summary>
+    private static IEnumerable<string> Trigrams(string text)
+    {
+        if (text.Length == 0)
+            yield break;
+        var marked = "\u0002" + text + "\u0003";
+        for (int i = 0; i + NgramLength <= marked.Length; i++)
+            yield return marked.Substring(i, NgramLength);
+        if (marked.Length < NgramLength)
+            yield return marked;
+    }
+
+    /// <summary>
+    /// What a row's vector is made from, readable: the spelled columns' text, then each sounds-alike column's
+    /// Metaphone codes in brackets. For the optional Vectorized Text column of a vectors workbook.
+    /// </summary>
+    public static string DescribeInput(Dictionary<string, string> row, List<string> vectorizedColumns, VectorizeOptions? options)
+    {
+        if (options is null || options.SoundsAlikeColumns.Count == 0)
+            return BuildCombinedText(row, vectorizedColumns);
+        var parts = vectorizedColumns.Select(c => options.SoundsAlikeColumns.Contains(c)
+                ? string.Join(' ', SoundCodes(row.GetValueOrDefault(c, string.Empty)).Select(code => $"[{code}]"))
+                : (row.GetValueOrDefault(c, string.Empty) ?? string.Empty).Trim().ToLowerInvariant())
+            .Where(p => p.Length > 0);
+        return string.Join(' ', parts);
     }
 
     /// <summary>

@@ -2,13 +2,15 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using System.Xml;
+using VectorMatchEngine.Core.Models;
 
 namespace VectorMatchEngine.Core.Services;
 
 /// <summary>
 /// Writes a dataset's vectors to an .xlsx workbook instead of the database: a "Vectors" sheet with one row per
-/// source row (its row number, the preserved columns, the text that was vectorized, then one numeric column per
-/// vector dimension, V0 to V511), and an "About" sheet recording how the vectors were made.
+/// source row (its row number, the preserved columns, optionally the text that was vectorized, then one numeric
+/// column per vector dimension, V0 to V511), and an "About" sheet recording how the vectors were made.
+/// The vectorized text is plain readable data, so it's left out unless asked for.
 ///
 /// Each row is over 500 cells, so the workbook is streamed straight into the file: the zip is written in create
 /// mode and each sheet with an <see cref="XmlWriter"/>. Building it in memory (ClosedXML, or the Open XML SDK,
@@ -28,11 +30,13 @@ public class VectorSheetExportService
     private const string RelationshipsNs = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
     /// <summary>
-    /// The About sheet's Method line. Loading a vectors workbook back checks it, since vectors made another way
-    /// (a different n-gram length or hash size) can't be compared with this version's.
+    /// The About sheet's Method line for an encoding. Loading a vectors workbook back checks it, since vectors made
+    /// another way (a different n-gram length or hash size) can't be compared with this version's.
     /// </summary>
-    public static string MethodDescription =>
-        $"Character {VectorizationService.NgramLength}-grams hashed into 2^{VectorizationService.NumberOfBits} buckets, L2-normalized";
+    public static string MethodDescription(string encodingMethod) => encodingMethod == VectorEncoding.Plain
+        ? $"Character {VectorizationService.NgramLength}-grams hashed into 2^{VectorizationService.NumberOfBits} buckets, L2-normalized"
+        : $"Character {VectorizationService.NgramLength}-grams and sounds-alike (Metaphone) codes, hashed with HMAC-SHA256 " +
+          $"under the matching key into 2^{VectorizationService.NumberOfBits} buckets, L2-normalized";
 
     /// <summary>The bold style's index in the stylesheet this writes.</summary>
     private const int BoldStyle = 1;
@@ -45,7 +49,9 @@ public class VectorSheetExportService
         List<float[]> vectors,
         List<string> vectorizedColumns,
         List<string> preservedColumns,
-        IProgress<(int current, int total, string message)>? progress = null) => Task.Run(() =>
+        IProgress<(int current, int total, string message)>? progress = null,
+        VectorizeOptions? options = null,
+        bool includeVectorizedText = false) => Task.Run(() =>
     {
         if (string.IsNullOrWhiteSpace(outputPath))
             throw new ArgumentException("No output path was supplied.", nameof(outputPath));
@@ -59,10 +65,13 @@ public class VectorSheetExportService
                 OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new InvalidOperationException("Choose a different file for the vectors: that one is the workbook being read.");
         preservedColumns ??= new List<string>();
+        options ??= VectorizeOptions.None;
+        var encoding = options.Encoding(vectorizedColumns);
 
         int dimensions = vectors.Count > 0 ? vectors[0].Length : VectorizationService.VectorDimensions;
-        int textColumn = 2 + preservedColumns.Count;   // 1-based: Row, the preserved columns, then the text
-        int firstVectorColumn = textColumn + 1;
+        // 1-based: Row, the preserved columns, the text if asked for, then the vectors.
+        int textColumn = includeVectorizedText ? 2 + preservedColumns.Count : 0;
+        int firstVectorColumn = 2 + preservedColumns.Count + (includeVectorizedText ? 1 : 0);
         int lastColumn = firstVectorColumn + dimensions - 1;
         if (rows.Count > MaxDataRows)
             throw new InvalidOperationException($"{rows.Count:N0} rows is more than a worksheet holds ({MaxDataRows:N0}).");
@@ -86,9 +95,10 @@ public class VectorSheetExportService
                 WriteText(zip, "xl/_rels/workbook.xml.rels", WorkbookRelationships);
                 WriteText(zip, "xl/styles.xml", Styles);
                 WriteXml(zip, "xl/worksheets/sheet1.xml", writer => WriteVectors(writer, rows, vectors,
-                    vectorizedColumns, preservedColumns, dimensions, textColumn, firstVectorColumn, progress));
+                    vectorizedColumns, preservedColumns, dimensions, textColumn, firstVectorColumn, options, progress));
                 WriteXml(zip, "xl/worksheets/sheet2.xml", writer => WriteAbout(writer, datasetName, sourceFilePath,
-                    rows.Count, dimensions, vectorizedColumns, preservedColumns, firstVectorColumn));
+                    rows.Count, dimensions, vectorizedColumns, preservedColumns, firstVectorColumn, encoding,
+                    includeVectorizedText));
                 progress?.Report((rows.Count, rows.Count, "Saving the spreadsheet..."));
             }
             File.Move(temporary, outputPath, overwrite: true);
@@ -104,17 +114,21 @@ public class VectorSheetExportService
 
     private static void WriteVectors(
         XmlWriter w, List<Dictionary<string, string>> rows, List<float[]> vectors, List<string> vectorizedColumns,
-        List<string> preservedColumns, int dimensions, int textColumn, int firstVectorColumn,
+        List<string> preservedColumns, int dimensions, int textColumn, int firstVectorColumn, VectorizeOptions options,
         IProgress<(int current, int total, string message)>? progress)
     {
-        var texts = rows.Select(row => VectorizationService.BuildCombinedText(row, vectorizedColumns)).ToList();
+        bool withText = textColumn > 0;
+        var texts = withText
+            ? rows.Select(row => VectorizationService.DescribeInput(row, vectorizedColumns, options)).ToList()
+            : new List<string>();
 
         // Widths for the readable columns, from their header and first few hundred values.
         var sample = Math.Min(rows.Count, 300);
         var widths = new List<double> { 7 };
         widths.AddRange(preservedColumns.Select(c =>
             Width(rows.Take(sample).Select(r => r.GetValueOrDefault(c, string.Empty).Length).Append(c.Length).Max())));
-        widths.Add(Width(texts.Take(sample).Select(t => t.Length).Append(15).Max()));
+        if (withText)
+            widths.Add(Width(texts.Take(sample).Select(t => t.Length).Append(15).Max()));
 
         w.WriteStartElement("worksheet", Main);
 
@@ -123,7 +137,7 @@ public class VectorSheetExportService
         w.WriteStartElement("sheetView");
         w.WriteAttributeString("workbookViewId", "0");
         w.WriteStartElement("pane");
-        w.WriteAttributeString("xSplit", textColumn.ToString(CultureInfo.InvariantCulture));
+        w.WriteAttributeString("xSplit", (firstVectorColumn - 1).ToString(CultureInfo.InvariantCulture));
         w.WriteAttributeString("ySplit", "1");
         w.WriteAttributeString("topLeftCell", $"{ColumnName(firstVectorColumn)}2");
         w.WriteAttributeString("activePane", "bottomRight");
@@ -140,7 +154,8 @@ public class VectorSheetExportService
         TextCell(w, "Row", BoldStyle);
         foreach (var column in preservedColumns)
             TextCell(w, column, BoldStyle);
-        TextCell(w, "Vectorized Text", BoldStyle);
+        if (withText)
+            TextCell(w, "Vectorized Text", BoldStyle);
         for (int d = 0; d < dimensions; d++)
             TextCell(w, $"V{d}", BoldStyle);
         w.WriteEndElement();
@@ -156,7 +171,8 @@ public class VectorSheetExportService
             NumberCell(w, (r + 1).ToString(CultureInfo.InvariantCulture));
             foreach (var column in preservedColumns)
                 TextCell(w, rows[r].GetValueOrDefault(column, string.Empty));
-            TextCell(w, texts[r]);
+            if (withText)
+                TextCell(w, texts[r]);
             var vector = vectors[r];
             for (int d = 0; d < dimensions; d++)
                 NumberCell(w, d < vector.Length && vector[d] != 0 ? vector[d].ToString("R", CultureInfo.InvariantCulture) : "0");
@@ -169,7 +185,8 @@ public class VectorSheetExportService
 
     private static void WriteAbout(
         XmlWriter w, string datasetName, string sourceFilePath, int rowCount, int dimensions,
-        List<string> vectorizedColumns, List<string> preservedColumns, int firstVectorColumn)
+        List<string> vectorizedColumns, List<string> preservedColumns, int firstVectorColumn, VectorEncoding encoding,
+        bool includesText)
     {
         var lines = new (string Label, string Value)[]
         {
@@ -181,8 +198,17 @@ public class VectorSheetExportService
             ("Preserved columns", string.Join(", ", preservedColumns)),
             ("Vector dimensions", dimensions.ToString(CultureInfo.InvariantCulture)),
             ("Vector columns", $"V0 to V{dimensions - 1}, starting at column {ColumnName(firstVectorColumn)} of the {VectorsSheetName} sheet"),
-            ("Method", MethodDescription),
+            ("Method", MethodDescription(encoding.Method)),
+            ("Encoding", encoding.Method),
+            ("Key fingerprint", encoding.KeyFingerprint ?? ""),
+            ("Sounds-alike columns", string.Join(", ", encoding.SoundsAlikeColumns)),
             ("Similarity", "Vectors have length 1, so the cosine similarity of two rows is the sum of their products (SUMPRODUCT)"),
+            ("Privacy", encoding.HasKey
+                ? "Vectorized with a matching key: without it the vectors can't be rebuilt from guesses. Preserved columns" +
+                  (includesText ? " and the Vectorized Text column" : "") + " are readable as they are."
+                : "No matching key: anyone with Vector Match Engine can vectorize guesses (names, dates) and compare, so " +
+                  "these vectors don't hide what they were made from. Preserved columns" +
+                  (includesText ? " and the Vectorized Text column" : "") + " are readable as they are."),
         };
 
         w.WriteStartElement("worksheet", Main);

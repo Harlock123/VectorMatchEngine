@@ -13,5 +13,10 @@ public class Dataset
     public string PreservedColumnsJson { get; set; } = "[]";  // JSON array of strings
     public int VectorDimensions { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // How the vectors were made (see VectorEncoding); datasets can only be matched if these agree.
+    public string Encoding { get; set; } = "trigram";             // NVARCHAR(32): "trigram" (original) or "keyed-trigram"
+    public string? KeyFingerprint { get; set; }                   // NVARCHAR(32): the matching key's fingerprint, never the key
+    public string SoundsAlikeColumnsJson { get; set; } = "[]";    // JSON array: columns encoded by how they sound
     public ICollection<DatasetRecord> Records { get; set; } = new List<DatasetRecord>();
 }

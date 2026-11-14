@@ -19,6 +19,9 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Dataset>().Property(d => d.FileName).HasMaxLength(512);
         modelBuilder.Entity<Dataset>().Property(d => d.VectorizedColumnsJson).HasColumnType("NVARCHAR(MAX)");
         modelBuilder.Entity<Dataset>().Property(d => d.PreservedColumnsJson).HasColumnType("NVARCHAR(MAX)");
+        modelBuilder.Entity<Dataset>().Property(d => d.Encoding).HasMaxLength(32);
+        modelBuilder.Entity<Dataset>().Property(d => d.KeyFingerprint).HasMaxLength(32);
+        modelBuilder.Entity<Dataset>().Property(d => d.SoundsAlikeColumnsJson).HasColumnType("NVARCHAR(MAX)");
 
         // ── DatasetRecord ────────────────────────────────────────────────
         modelBuilder.Entity<DatasetRecord>().Property(r => r.VectorData).HasColumnType("VARBINARY(MAX)");

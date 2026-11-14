@@ -7,13 +7,15 @@ public sealed record VectorWorkbookInfo(
     List<string> VectorizedColumns,
     List<string> PreservedColumns,
     int Dimensions,
-    int? RowCount)
+    int? RowCount,
+    VectorEncoding Encoding)
 {
     public string Summary =>
         $"{(RowCount is { } n ? $"{n:N0} rows" : "Rows")} of {Dimensions}-dimension vectors" +
         (SourceFile.Length > 0 ? $" made from {SourceFile}" : "") +
         (VectorizedColumns.Count > 0 ? $" (vectorized: {string.Join(", ", VectorizedColumns)})" : "") +
-        $". Preserved columns: {(PreservedColumns.Count > 0 ? string.Join(", ", PreservedColumns) : "none")}.";
+        $". Preserved columns: {(PreservedColumns.Count > 0 ? string.Join(", ", PreservedColumns) : "none")}." +
+        $" Encoding: {Encoding.Display}.";
 }
 
 /// <summary>A vectors workbook's rows: each one's preserved values and its vector, in sheet order.</summary>
