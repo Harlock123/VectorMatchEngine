@@ -193,14 +193,13 @@ To try it, import the sheet and vectorize the member columns (name, DOB, street,
 line for the same member gets the same vector, so matching the sheet against itself, or against a second
 extract of the same members, finds them.
 
-`SAMPLES/ClaimsSample2025 vectors.xlsx` is that sheet already vectorized the de-identified way (Import,
-*Another spreadsheet*): all 10,000 lines, the twelve member columns (first, last and middle initial,
-gender, DOB, street, city, state, ZIP, SSN, insurance ID, phone) only in the vectors, with first and last
-name *Sounds alike*, under the matching key `VectorMatchEngine sample key` (fingerprint `7F3A-A643-07E3`).
-Only the 33 claim columns are readable, and there is no `Vectorized Text` column. Importing it loads those
-vectors into the database as they are; to match another dataset against it, vectorize that one with the
-same key and the same two name columns *Sounds alike*. (The key is published here so the sample can be
-tried; a real key stays secret.)
+`SAMPLES/ClaimsSample2025 vectors.xlsx` is that sheet already vectorized the plain way (Import, *Another
+spreadsheet*, no matching key, no *Sounds alike*, with *Also write the vectorized text* ticked): all 10,000
+lines, the twelve member columns (first, last and middle initial, gender, DOB, street, city, state, ZIP, SSN,
+insurance ID, phone) in the vectors and, readably, in the `Vectorized Text` column, beside the 33 claim
+columns. It shows what the vectors and text look like without the privacy options; a real extract should use
+a matching key and leave the text column off (see *Privacy* above). Importing it loads those vectors into the
+database as they are; to match another dataset against it, vectorize that one the same plain way.
 
 `SAMPLES/GenerateClaimsSample.cs` makes the claims workbook
 (`dotnet run SAMPLES/GenerateClaimsSample.cs` from the repository root); its seed is fixed, so it makes
