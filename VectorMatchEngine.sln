@@ -15,6 +15,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SAMPLES", "SAMPLES", "{D194
 		SAMPLES\ClaimsSample2025 vectors.xlsx = SAMPLES\ClaimsSample2025 vectors.xlsx
 		SAMPLES\GenerateClaimsSample.cs = SAMPLES\GenerateClaimsSample.cs
 		SAMPLES\HOW2USETheVectorizedResultsToCompare.docx = SAMPLES\HOW2USETheVectorizedResultsToCompare.docx
+		SAMPLES\ClaimsSample2025 vectors (de-identified).xlsx = SAMPLES\ClaimsSample2025 vectors (de-identified).xlsx
+		SAMPLES\Eligibility list.xlsx = SAMPLES\Eligibility list.xlsx
+		SAMPLES\Eligibility list vectors.xlsx = SAMPLES\Eligibility list vectors.xlsx
+		SAMPLES\HOW2MatchClaimsWithoutPHI.docx = SAMPLES\HOW2MatchClaimsWithoutPHI.docx
 	EndProjectSection
 EndProject
 Global
