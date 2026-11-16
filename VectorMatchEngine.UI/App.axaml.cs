@@ -100,6 +100,7 @@ public partial class App : Application
         // Data
         services.AddSingleton<IDatasetRepository, DatasetRepository>();
         services.AddSingleton<IMatchJobRepository, MatchJobRepository>();
+        services.AddSingleton<SqlVectorStore>();
         services.AddSingleton<DataService>();
 
         // Navigation + dialogs

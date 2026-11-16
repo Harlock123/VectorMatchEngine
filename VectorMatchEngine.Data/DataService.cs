@@ -24,6 +24,7 @@ public class DataService
     private readonly ExcelExportService _excelExportService;
     private readonly VectorSheetExportService _vectorSheetExportService;
     private readonly VectorSheetImportService _vectorSheetImportService;
+    private readonly SqlVectorStore _sqlVectorStore;
     private readonly ILogger<DataService> _logger;
 
     public DataService(
@@ -36,6 +37,7 @@ public class DataService
         ExcelExportService excelExportService,
         VectorSheetExportService vectorSheetExportService,
         VectorSheetImportService vectorSheetImportService,
+        SqlVectorStore sqlVectorStore,
         ILogger<DataService>? logger = null)
     {
         _contextFactory = contextFactory;
@@ -47,6 +49,7 @@ public class DataService
         _excelExportService = excelExportService;
         _vectorSheetExportService = vectorSheetExportService;
         _vectorSheetImportService = vectorSheetImportService;
+        _sqlVectorStore = sqlVectorStore;
         _logger = logger ?? NullLogger<DataService>.Instance;
     }
 
@@ -66,6 +69,11 @@ public class DataService
         await context.Database.OpenConnectionAsync();
         await context.Database.CloseConnectionAsync();
     }
+
+    /// <summary>
+    /// Whether the configured server can do the comparing itself with its VECTOR type (SQL Server 2025, Azure SQL).
+    /// </summary>
+    public Task<bool> SupportsDatabaseVectorsAsync() => _sqlVectorStore.IsSupportedAsync();
 
     // ── Column discovery ──────────────────────────────────────────────────
 
@@ -273,40 +281,29 @@ public class DataService
         try
         {
             await CheckEncodingsMatchAsync(request.DatasetAId, request.DatasetBId);
-            var datasetA = await LoadVectorsAsync(request.DatasetAId);
-            var datasetB = await LoadVectorsAsync(request.DatasetBId);
 
-            if (datasetA.Count == 0 || datasetB.Count == 0)
-                throw new InvalidOperationException("One of the selected datasets has no records.");
-
-            var dimensionsA = datasetA[0].vector.Length;
-            var dimensionsB = datasetB[0].vector.Length;
-            if (dimensionsA != dimensionsB)
-            {
-                throw new InvalidOperationException(
-                    $"Vector dimensions differ ({dimensionsA} vs {dimensionsB}). Both datasets must be " +
-                    "imported with the same version of the vectorizer; re-import the older one.");
-            }
-
-            var pairs = await _similarityService.FindMatchesAsync(
-                datasetA, datasetB, request.SimilarityThreshold, progress);
-
-            await SaveMatchResultsAsync(job.Id, pairs);
+            int matchCount = request.UseDatabaseVectors && await _sqlVectorStore.IsSupportedAsync()
+                ? await MatchInDatabaseAsync(job, request, progress)
+                : await MatchInAppAsync(job, request, progress);
 
             job.Status = "Completed";
-            job.TotalMatchesFound = pairs.Count;
+            job.TotalMatchesFound = matchCount;
             job.CompletedAt = DateTime.UtcNow;
             await _matchJobRepository.UpdateAsync(job);
 
             _logger.LogInformation(
-                "Match job {JobId} completed: {MatchCount} matches at threshold {Threshold}.",
-                job.Id, pairs.Count, request.SimilarityThreshold);
+                "Match job {JobId} completed {Where}: {MatchCount} matches at threshold {Threshold}.",
+                job.Id, job.MatchedInDatabase ? "in SQL Server" : "in the app", matchCount, request.SimilarityThreshold);
 
             return job;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Match job {JobId} failed.", job.Id);
+
+            // Results saved before the failure would make a failed job look partly done.
+            try { await DeleteMatchResultsAsync(job.Id); }
+            catch (Exception cleanupEx) { _logger.LogError(cleanupEx, "Could not clear job {JobId}'s partial results.", job.Id); }
 
             job.Status = "Failed";
             job.ErrorMessage = ex.Message;
@@ -318,6 +315,62 @@ public class DataService
 
             throw;
         }
+    }
+
+    /// <summary>Loads both datasets and compares every pair in this process (SimilarityService), then saves the matches.</summary>
+    private async Task<int> MatchInAppAsync(MatchJob job, MatchJobRequest request, IProgress<int>? progress)
+    {
+        var datasetA = await LoadVectorsAsync(request.DatasetAId);
+        var datasetB = await LoadVectorsAsync(request.DatasetBId);
+
+        if (datasetA.Count == 0 || datasetB.Count == 0)
+            throw new InvalidOperationException("One of the selected datasets has no records.");
+
+        var dimensionsA = datasetA[0].vector.Length;
+        var dimensionsB = datasetB[0].vector.Length;
+        if (dimensionsA != dimensionsB)
+        {
+            throw new InvalidOperationException(
+                $"Vector dimensions differ ({dimensionsA} vs {dimensionsB}). Both datasets must be " +
+                "imported with the same version of the vectorizer; re-import the older one.");
+        }
+
+        var pairs = await _similarityService.FindMatchesAsync(
+            datasetA, datasetB, request.SimilarityThreshold, progress);
+
+        await SaveMatchResultsAsync(job.Id, pairs);
+        return pairs.Count;
+    }
+
+    /// <summary>Has SQL Server score the pairs with VECTOR_DISTANCE and write the matches itself (SqlVectorStore).</summary>
+    private async Task<int> MatchInDatabaseAsync(MatchJob job, MatchJobRequest request, IProgress<int>? progress)
+    {
+        await using (var context = await _contextFactory.CreateDbContextAsync())
+        {
+            var datasets = await context.Datasets.AsNoTracking()
+                .Where(d => d.Id == request.DatasetAId || d.Id == request.DatasetBId)
+                .Select(d => new { d.RowCount, d.VectorDimensions })
+                .ToListAsync();
+
+            if (datasets.Any(d => d.RowCount == 0))
+                throw new InvalidOperationException("One of the selected datasets has no records.");
+
+            // The VECTOR column has one fixed size; a dataset from another vectorizer version can't go in it.
+            if (datasets.FirstOrDefault(d => d.VectorDimensions != VectorizationService.VectorDimensions) is { } odd)
+                throw new InvalidOperationException(
+                    $"Vector dimensions differ ({odd.VectorDimensions} vs {VectorizationService.VectorDimensions}). " +
+                    "Both datasets must be imported with the same version of the vectorizer; re-import the older one.");
+        }
+
+        job.MatchedInDatabase = true;
+        return await _sqlVectorStore.MatchIntoResultsAsync(
+            job.Id, request.DatasetAId, request.DatasetBId, request.SimilarityThreshold, progress);
+    }
+
+    private async Task DeleteMatchResultsAsync(int matchJobId)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        await context.MatchResults.Where(r => r.MatchJobId == matchJobId).ExecuteDeleteAsync();
     }
 
     /// <summary>Refuses to match datasets whose vectors were made differently: their scores would mean nothing.</summary>

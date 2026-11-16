@@ -31,6 +31,21 @@ public partial class NewMatchJobViewModel : ObservableObject, IActivatable
     [ObservableProperty] private string? _errorMessage;
     [ObservableProperty] private bool _isLoading;
 
+    /// <summary>Compare inside SQL Server when it has the VECTOR type; the app does it otherwise.</summary>
+    [ObservableProperty] private bool _useDatabaseVectors = true;
+
+    /// <summary>Null until the server has been asked.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DatabaseVectorsNote))]
+    private bool? _serverSupportsVectors;
+
+    public string DatabaseVectorsNote => ServerSupportsVectors switch
+    {
+        true => "This server has the VECTOR type, so SQL Server can score the pairs itself; no vectors are sent to this computer.",
+        false => "This server has no VECTOR type (it needs SQL Server 2025 or Azure SQL), so the app compares the vectors itself.",
+        null => "Checking whether this server has the VECTOR type..."
+    };
+
     public ObservableCollection<DatasetInfo> AvailableDatasets { get; } = new();
 
     public NewMatchJobViewModel(DataService dataService, INavigationService navigation)
@@ -62,6 +77,8 @@ public partial class NewMatchJobViewModel : ObservableObject, IActivatable
 
             if (AvailableDatasets.Count < 2)
                 StatusMessage = "Import at least two datasets before running a match job.";
+
+            ServerSupportsVectors = await Task.Run(() => _dataService.SupportsDatabaseVectorsAsync());
         }
         catch (Exception ex)
         {
@@ -85,7 +102,8 @@ public partial class NewMatchJobViewModel : ObservableObject, IActivatable
         {
             DatasetAId = SelectedDatasetA!.Id,
             DatasetBId = SelectedDatasetB!.Id,
-            SimilarityThreshold = Threshold
+            SimilarityThreshold = Threshold,
+            UseDatabaseVectors = UseDatabaseVectors
         };
 
         var progress = new Progress<int>(percent =>

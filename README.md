@@ -256,6 +256,21 @@ Scores run 0.0 (nothing in common) to 1.0 (identical normalized text). Picking a
 **The 0.85 default is stricter than it looks.** Start there, then lower it until recall matches your
 data. Matching is O(A × B) — two 10,000-row datasets is 100 million comparisons.
 
+#### Matching inside SQL Server 2025
+
+On a server with the native `VECTOR` type (SQL Server 2025, Azure SQL Database), the server can do the
+comparing. *New Match Job* checks the server and, when it qualifies, offers **Compare inside SQL Server
+when it has the VECTOR type** (on by default). The job then:
+
+1. creates `dbo.DatasetRecordVectors` the first time (one `VECTOR(512)` per record), and copies in the
+   vectors of any dataset not already there, from `DatasetRecords.VectorData`;
+2. scores the pairs with `VECTOR_DISTANCE('dot', …)` in chunks of 500 records of A, and inserts those at
+   or above the threshold straight into `MatchResults`.
+
+No vectors come back to the app, and the scores equal the app's own (the dot product of normalized
+vectors). On any other server, or with the box unticked, the app compares the vectors as above. It is
+still every A against every B; `VECTOR_DISTANCE` does exact comparisons, not an approximate index.
+
 ---
 
 ## Project layout
@@ -276,6 +291,7 @@ VectorMatchEngine.UI/       Avalonia MVVM desktop app — views, view models, DI
 | `DatasetRecords` | One row per spreadsheet row: serialized vector plus preserved values as JSON. |
 | `MatchJobs` | One row per run: the two datasets, threshold, status, match count. |
 | `MatchResults` | One row per matched pair: both record IDs and the similarity score. |
+| `DatasetRecordVectors` | SQL Server 2025 / Azure SQL only: each record's vector as `VECTOR(512)`, for matching inside the server. Created and filled at run time, not by a migration, because older servers can't create the column. Its rows go when their record does. |
 
 Deleting a dataset cascades to its records; deleting a match job cascades to its results. References
 from `MatchJobs` → `Datasets` and `MatchResults` → `DatasetRecords` are **restricted** — both to
@@ -364,3 +380,5 @@ Known limitations:
 - The SQL Server persistence path has not yet been exercised against a live server in this
   repository — the schema and migration are sound, but first run against your own instance is the
   proving step.
+- Matching inside SQL Server 2025 (`SqlVectorStore`) builds clean but has not yet been run against a
+  SQL Server 2025 or Azure SQL instance.

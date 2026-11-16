@@ -43,6 +43,8 @@ dotnet restore -p:ContinuousIntegrationBuild=true    # fails if the packages dri
   - `Models/`: plain request and result types.
 - `VectorMatchEngine.Data/`: EF Core.
   - `AppDbContext.cs`, `Entities/`, `Migrations/`, and `Repositories/` (datasets and match jobs).
+  - `SqlVectorStore.cs`: matching inside SQL Server 2025 / Azure SQL with `VECTOR` and `VECTOR_DISTANCE`. It
+    detects support with a probe query and keeps its own table, `DatasetRecordVectors`, outside the EF model.
   - `DataService.cs`: the orchestrator the UI calls (migrate, import, match, export, delete).
     `IngestExcelAsync` (to the database) and `VectorizeToSpreadsheetAsync` (to a file, no database) share
     `ReadAndVectorizeAsync`; `IngestExcelAsync` and `LoadVectorWorkbookAsync` share `SaveDatasetAsync`.
@@ -73,7 +75,9 @@ dotnet restore -p:ContinuousIntegrationBuild=true    # fails if the packages dri
 - **Repositories take `IDbContextFactory`, not `AppDbContext`.** They are singletons, so they create a context per
   call; this is also what lets a new connection string apply without a restart.
 - **Schema changes need a migration** in `VectorMatchEngine.Data/Migrations/`; the app applies migrations at
-  start-up and when settings are saved.
+  start-up and when settings are saved. The one exception is `DatasetRecordVectors`, which
+  `SqlVectorStore` creates at run time because a `VECTOR` column can't be created on older servers. It is a copy
+  of `DatasetRecords.VectorData` sized `VECTOR(VectorDimensions)`: changing `NumberOfBits` means dropping it.
 - **Package versions are deliberate.** Keep ClosedXML at 0.104 or later, Avalonia core at 11.3.20 and
   `Avalonia.Controls.DataGrid` at 11.3.13; the README explains the security advisories behind each.
   - `RestorePackagesWithLockFile` is on: commit the updated `packages.lock.json` files with any package change.

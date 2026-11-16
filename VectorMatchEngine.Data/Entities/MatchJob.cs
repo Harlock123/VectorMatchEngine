@@ -20,5 +20,8 @@ public class MatchJob
 
     // Display helpers for the MatchJobs DataGrid.
     [NotMapped] public string DatasetAName => DatasetA?.Name ?? $"#{DatasetAId}";
+    /// <summary>Set by the run that made it: whether SQL Server did the comparing (VECTOR_DISTANCE).</summary>
+    [NotMapped] public bool MatchedInDatabase { get; set; }
+
     [NotMapped] public string DatasetBName => DatasetB?.Name ?? $"#{DatasetBId}";
 }
