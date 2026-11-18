@@ -33,6 +33,7 @@
             <DataGridTextColumn Header="Dataset A" Binding="{Binding DatasetAName}" Width="160"/>
             <DataGridTextColumn Header="Dataset B" Binding="{Binding DatasetBName}" Width="160"/>
             <DataGridTextColumn Header="Threshold" Binding="{Binding Threshold, StringFormat='{}{0:0.00}'}" Width="90"/>
+            <DataGridTextColumn Header="Compared" Binding="{Binding SettingsDisplay}" Width="220"/>
             <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
             <DataGridTextColumn Header="Matches" Binding="{Binding TotalMatchesFound, StringFormat='{}{0:N0}'}" Width="90"/>
             <DataGridTextColumn Header="Created" Width="140"

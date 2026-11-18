@@ -41,6 +41,9 @@ public partial class MatchResultsViewModel : ObservableObject, IActivatable
     /// <summary>Preserved column names for Dataset B (display names, as imported).</summary>
     public List<string> ColumnsB { get; private set; } = new();
 
+    /// <summary>The job's paired fields' labels, for the field score columns.</summary>
+    public List<string> FieldLabels { get; private set; } = new();
+
     /// <summary>The raw pairs behind the grid.</summary>
     public List<MatchedPair> MatchedPairs { get; private set; } = new();
 
@@ -85,9 +88,16 @@ public partial class MatchResultsViewModel : ObservableObject, IActivatable
 
             MatchedPairs = await Task.Run(() => _dataService.GetMatchResultsAsync(MatchJobId));
 
+            var settings = DataService.SettingsOf(job);
+            FieldLabels = MatchedPairs.Any(p => p.FieldScores is not null)
+                ? settings.Fields.Select(f => f.Label).ToList()
+                : new List<string>();
+            var compared = job.PairsCompared is { } n
+                ? $" - {n:N0} of {(long)(job.DatasetA?.RowCount ?? 0) * (job.DatasetB?.RowCount ?? 0):N0} pairs compared"
+                : "";
             HeaderText =
                 $"Job #{job.Id} - {job.DatasetAName} vs {job.DatasetBName} - " +
-                $"Threshold {job.Threshold:0.00} - {MatchedPairs.Count:N0} matches";
+                $"Threshold {job.Threshold:0.00} - {settings.Display} - {MatchedPairs.Count:N0} matches{compared}";
 
             GridColumns = BuildColumnDescriptors();
 
@@ -113,10 +123,17 @@ public partial class MatchResultsViewModel : ObservableObject, IActivatable
 
     private List<GridColumnDescriptor> BuildColumnDescriptors()
     {
-        var columns = new List<GridColumnDescriptor>(ColumnsA.Count + ColumnsB.Count + 1)
+        var columns = new List<GridColumnDescriptor>(ColumnsA.Count + ColumnsB.Count + FieldLabels.Count + 3)
         {
             new("Similarity", "Similarity", isSimilarity: true)
         };
+        if (MatchedPairs.Any(p => p.RunnerUpScore is not null))
+        {
+            columns.Add(new GridColumnDescriptor("RunnerUp", "Runner-up", isSimilarity: true));
+            columns.Add(new GridColumnDescriptor("Gap", "Gap", isSimilarity: true));
+        }
+        for (int i = 0; i < FieldLabels.Count; i++)
+            columns.Add(new GridColumnDescriptor($"F{i}", $"\u2248 {FieldLabels[i]}", isSimilarity: true));
 
         for (int i = 0; i < ColumnsA.Count; i++)
             columns.Add(new GridColumnDescriptor($"A{i}", $"A: {ColumnsA[i]}"));
@@ -137,6 +154,10 @@ public partial class MatchResultsViewModel : ObservableObject, IActivatable
             var values = (IDictionary<string, object?>)row;
 
             values["Similarity"] = pair.SimilarityScore;
+            values["RunnerUp"] = pair.RunnerUpScore;
+            values["Gap"] = pair.Gap;
+            for (int i = 0; i < FieldLabels.Count; i++)
+                values[$"F{i}"] = pair.FieldScores is { } scores && i < scores.Length ? scores[i] : null;
 
             for (int i = 0; i < ColumnsA.Count; i++)
                 values[$"A{i}"] = pair.DatasetAPreserved.GetValueOrDefault(ColumnsA[i], string.Empty);

@@ -92,7 +92,7 @@ public class DataService
     {
         preservedColumns ??= new List<string>();
         options ??= VectorizeOptions.None;
-        var (rows, vectors) = await ReadAndVectorizeAsync(filePath, datasetName, vectorizedColumns, options, progress);
+        var (rows, vectors, fieldVectors) = await ReadAndVectorizeAsync(filePath, datasetName, vectorizedColumns, options, progress);
 
         var preserved = rows
             .Select(row => preservedColumns.ToDictionary(
@@ -102,7 +102,7 @@ public class DataService
 
         return await SaveDatasetAsync(
             datasetName, Path.GetFileName(filePath), vectorizedColumns, preservedColumns, preserved, vectors,
-            options.Encoding(vectorizedColumns), progress);
+            fieldVectors, options.Encoding(vectorizedColumns), progress);
     }
 
     /// <summary>
@@ -137,10 +137,10 @@ public class DataService
 
         return await SaveDatasetAsync(
             datasetName, fileName, info.VectorizedColumns, info.PreservedColumns, workbook.Preserved, workbook.Vectors,
-            info.Encoding, progress);
+            workbook.FieldVectors, info.Encoding, progress);
     }
 
-    /// <summary>Stores a dataset: one record per row, with its vector and preserved values.</summary>
+    /// <summary>Stores a dataset: one record per row, with its vector, field vectors (if any) and preserved values.</summary>
     private async Task<Dataset> SaveDatasetAsync(
         string datasetName,
         string fileName,
@@ -148,6 +148,7 @@ public class DataService
         List<string> preservedColumns,
         List<Dictionary<string, string>> preserved,
         List<float[]> vectors,
+        List<SparseVector[]>? fieldVectors,
         VectorEncoding encoding,
         IProgress<(int current, int total, string message)>? progress)
     {
@@ -163,7 +164,10 @@ public class DataService
             CreatedAt = DateTime.UtcNow,
             Encoding = encoding.Method,
             KeyFingerprint = encoding.KeyFingerprint,
-            SoundsAlikeColumnsJson = JsonSerializer.Serialize(encoding.SoundsAlikeColumns)
+            SoundsAlikeColumnsJson = JsonSerializer.Serialize(encoding.SoundsAlikeColumns),
+            Cleanup = encoding.Cleanup,
+            FieldKindsJson = JsonSerializer.Serialize(encoding.Kinds.ToDictionary(k => k.Key, k => k.Value.ToString())),
+            HasFieldVectors = fieldVectors is not null && fieldVectors.Count == count
         };
 
         var records = new List<DatasetRecord>(count);
@@ -177,7 +181,8 @@ public class DataService
             {
                 RowIndex = i,
                 VectorData = _vectorizationService.SerializeVector(vectors[i]),
-                PreservedDataJson = JsonSerializer.Serialize(preserved[i])
+                PreservedDataJson = JsonSerializer.Serialize(preserved[i]),
+                FieldVectorData = dataset.HasFieldVectors ? FieldVectorCodec.Serialize(fieldVectors![i]) : null
             });
         }
 
@@ -214,10 +219,10 @@ public class DataService
         if (string.IsNullOrWhiteSpace(outputPath))
             throw new ArgumentException("Choose a file to write the vectors to.", nameof(outputPath));
 
-        var (rows, vectors) = await ReadAndVectorizeAsync(filePath, datasetName, vectorizedColumns, options, progress);
+        var (rows, vectors, fieldVectors) = await ReadAndVectorizeAsync(filePath, datasetName, vectorizedColumns, options, progress);
         await _vectorSheetExportService.ExportVectorsAsync(
             outputPath, datasetName, filePath, rows, vectors, vectorizedColumns, preservedColumns, progress,
-            options, includeVectorizedText);
+            options, includeVectorizedText, fieldVectors);
 
         progress?.Report((rows.Count, rows.Count, "Done."));
         _logger.LogInformation(
@@ -225,8 +230,8 @@ public class DataService
         return rows.Count;
     }
 
-    /// <summary>Checks the request, reads the workbook's rows and vectorizes them (one vector per row).</summary>
-    private async Task<(List<Dictionary<string, string>> Rows, List<float[]> Vectors)> ReadAndVectorizeAsync(
+    /// <summary>Checks the request, reads the workbook's rows and vectorizes them (one vector per row, and one per field).</summary>
+    private async Task<(List<Dictionary<string, string>> Rows, List<float[]> Vectors, List<SparseVector[]> FieldVectors)> ReadAndVectorizeAsync(
         string filePath,
         string datasetName,
         List<string> vectorizedColumns,
@@ -247,7 +252,8 @@ public class DataService
 
         progress?.Report((0, rows.Count, $"Vectorizing {rows.Count:N0} rows..."));
         var vectors = _vectorizationService.VectorizeRows(rows, vectorizedColumns, options);
-        return (rows, vectors);
+        var fieldVectors = _vectorizationService.VectorizeFields(rows, vectorizedColumns, options);
+        return (rows, vectors, fieldVectors);
     }
 
     // ── Dataset listing ───────────────────────────────────────────────────
@@ -275,14 +281,16 @@ public class DataService
             DatasetBId = request.DatasetBId,
             Threshold = request.SimilarityThreshold,
             Status = "Running",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            SettingsJson = JsonSerializer.Serialize(request.Settings)
         });
 
         try
         {
-            await CheckEncodingsMatchAsync(request.DatasetAId, request.DatasetBId);
+            await CheckEncodingsMatchAsync(request.DatasetAId, request.DatasetBId, request.Settings);
 
-            int matchCount = request.UseDatabaseVectors && await _sqlVectorStore.IsSupportedAsync()
+            int matchCount = request.UseDatabaseVectors && !request.Settings.NeedsAppMatching
+                             && await _sqlVectorStore.IsSupportedAsync()
                 ? await MatchInDatabaseAsync(job, request, progress)
                 : await MatchInAppAsync(job, request, progress);
 
@@ -320,14 +328,14 @@ public class DataService
     /// <summary>Loads both datasets and compares every pair in this process (SimilarityService), then saves the matches.</summary>
     private async Task<int> MatchInAppAsync(MatchJob job, MatchJobRequest request, IProgress<int>? progress)
     {
-        var datasetA = await LoadVectorsAsync(request.DatasetAId);
-        var datasetB = await LoadVectorsAsync(request.DatasetBId);
+        var datasetA = await LoadRecordsAsync(request.DatasetAId);
+        var datasetB = await LoadRecordsAsync(request.DatasetBId);
 
         if (datasetA.Count == 0 || datasetB.Count == 0)
             throw new InvalidOperationException("One of the selected datasets has no records.");
 
-        var dimensionsA = datasetA[0].vector.Length;
-        var dimensionsB = datasetB[0].vector.Length;
+        var dimensionsA = datasetA[0].Vector.Length;
+        var dimensionsB = datasetB[0].Vector.Length;
         if (dimensionsA != dimensionsB)
         {
             throw new InvalidOperationException(
@@ -335,11 +343,12 @@ public class DataService
                 "imported with the same version of the vectorizer; re-import the older one.");
         }
 
-        var pairs = await _similarityService.FindMatchesAsync(
-            datasetA, datasetB, request.SimilarityThreshold, progress);
+        var run = await _similarityService.FindMatchesAsync(
+            datasetA, datasetB, request.SimilarityThreshold, request.Settings, progress);
 
-        await SaveMatchResultsAsync(job.Id, pairs);
-        return pairs.Count;
+        job.PairsCompared = run.PairsCompared;
+        await SaveMatchResultsAsync(job.Id, run.Pairs);
+        return run.Pairs.Count;
     }
 
     /// <summary>Has SQL Server score the pairs with VECTOR_DISTANCE and write the matches itself (SqlVectorStore).</summary>
@@ -373,8 +382,12 @@ public class DataService
         await context.MatchResults.Where(r => r.MatchJobId == matchJobId).ExecuteDeleteAsync();
     }
 
-    /// <summary>Refuses to match datasets whose vectors were made differently: their scores would mean nothing.</summary>
-    private async Task CheckEncodingsMatchAsync(int datasetAId, int datasetBId)
+    /// <summary>
+    /// Refuses to match datasets whose vectors were made differently (their scores would mean nothing), and checks
+    /// the field pairing: the fields exist, both datasets have field vectors, and each pair is encoded the same way.
+    /// Sets each pairing's indices from its column names.
+    /// </summary>
+    private async Task CheckEncodingsMatchAsync(int datasetAId, int datasetBId, MatchSettings settings)
     {
         await using var context = await _contextFactory.CreateDbContextAsync();
         var datasets = await context.Datasets.AsNoTracking()
@@ -387,17 +400,75 @@ public class DataService
         if (EncodingOf(a).IncompatibilityWith(EncodingOf(b)) is { } reason)
             throw new InvalidOperationException(
                 $"'{a.Name}' and '{b.Name}' can't be matched: {reason}. Import them again the same way " +
-                "(the same matching key and sounds-alike settings).");
+                "(the same matching key, sounds-alike and field type settings).");
+
+        if (settings.Fields.Count == 0)
+            return;
+        if (!a.HasFieldVectors || !b.HasFieldVectors)
+            throw new InvalidOperationException(
+                $"'{(a.HasFieldVectors ? b : a).Name}' was imported before field vectors, so it can't be scored or " +
+                "explained field by field. Import it again, or match without paired fields.");
+
+        var encodingA = EncodingOf(a);
+        var encodingB = EncodingOf(b);
+        var columnsA = DeserializeColumns(a.VectorizedColumnsJson);
+        var columnsB = DeserializeColumns(b.VectorizedColumnsJson);
+        foreach (var field in settings.Fields)
+        {
+            field.IndexA = columnsA.IndexOf(field.NameA);
+            field.IndexB = columnsB.IndexOf(field.NameB);
+            if (field.IndexA < 0 || field.IndexB < 0)
+                throw new InvalidOperationException(
+                    $"'{(field.IndexA < 0 ? field.NameA : field.NameB)}' isn't one of '{(field.IndexA < 0 ? a.Name : b.Name)}''s vectorized columns.");
+            bool soundA = encodingA.SoundsAlikeColumns.Contains(field.NameA);
+            bool soundB = encodingB.SoundsAlikeColumns.Contains(field.NameB);
+            if (soundA != soundB)
+                throw new InvalidOperationException(
+                    $"{field.Label} can't be paired: it's encoded by sound in '{(soundA ? a.Name : b.Name)}' but spelled " +
+                    $"in '{(soundA ? b.Name : a.Name)}'.");
+            var kindA = encodingA.KindOf(field.NameA);
+            var kindB = encodingB.KindOf(field.NameB);
+            if (kindA != kindB)
+                throw new InvalidOperationException(
+                    $"{field.Label} can't be paired: its field type is {FieldKinds.Label(kindA)} in '{a.Name}' but " +
+                    $"{FieldKinds.Label(kindB)} in '{b.Name}'.");
+        }
+    }
+
+    /// <summary>A job's settings; the defaults (whole row, every pair) for jobs from before settings were saved.</summary>
+    public static MatchSettings SettingsOf(MatchJob job)
+    {
+        if (string.IsNullOrWhiteSpace(job.SettingsJson))
+            return new MatchSettings();
+        try { return JsonSerializer.Deserialize<MatchSettings>(job.SettingsJson) ?? new MatchSettings(); }
+        catch (JsonException) { return new MatchSettings(); }
     }
 
     /// <summary>How a dataset's vectors were made.</summary>
     public static VectorEncoding EncodingOf(Dataset dataset) => new(
         string.IsNullOrEmpty(dataset.Encoding) ? VectorEncoding.Plain : dataset.Encoding,
         string.IsNullOrEmpty(dataset.KeyFingerprint) ? null : dataset.KeyFingerprint,
-        DeserializeColumns(dataset.SoundsAlikeColumnsJson));
+        DeserializeColumns(dataset.SoundsAlikeColumnsJson),
+        string.IsNullOrEmpty(dataset.Cleanup) ? null : dataset.Cleanup,
+        DeserializeKinds(dataset.FieldKindsJson));
 
-    /// <summary>Loads a dataset's records as (id, vector, preserved) tuples, without navigations.</summary>
-    private async Task<List<(long id, float[] vector, Dictionary<string, string> preserved)>> LoadVectorsAsync(int datasetId)
+    private static Dictionary<string, FieldKind> DeserializeKinds(string? json)
+    {
+        var kinds = new Dictionary<string, FieldKind>();
+        if (string.IsNullOrWhiteSpace(json))
+            return kinds;
+        try
+        {
+            foreach (var (column, name) in JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new())
+                if (FieldKinds.Parse(name) is { } kind && kind != FieldKind.Text)
+                    kinds[column] = kind;
+        }
+        catch (JsonException) { }
+        return kinds;
+    }
+
+    /// <summary>Loads a dataset's records for the matcher (vector, field vectors, preserved values), without navigations.</summary>
+    private async Task<List<MatchRecord>> LoadRecordsAsync(int datasetId)
     {
         await using var context = await _contextFactory.CreateDbContextAsync();
 
@@ -405,15 +476,16 @@ public class DataService
             .AsNoTracking()
             .Where(r => r.DatasetId == datasetId)
             .OrderBy(r => r.RowIndex)
-            .Select(r => new { r.Id, r.VectorData, r.PreservedDataJson })
+            .Select(r => new { r.Id, r.VectorData, r.FieldVectorData, r.PreservedDataJson })
             .ToListAsync();
 
-        var result = new List<(long, float[], Dictionary<string, string>)>(raw.Count);
+        var result = new List<MatchRecord>(raw.Count);
         foreach (var record in raw)
         {
-            result.Add((
+            result.Add(new MatchRecord(
                 record.Id,
                 _vectorizationService.DeserializeVector(record.VectorData),
+                FieldVectorCodec.Deserialize(record.FieldVectorData),
                 DeserializePreserved(record.PreservedDataJson)));
         }
 
@@ -435,7 +507,9 @@ public class DataService
                 MatchJobId = matchJobId,
                 RecordAId = pair.RecordAId,
                 RecordBId = pair.RecordBId,
-                SimilarityScore = pair.SimilarityScore
+                SimilarityScore = pair.SimilarityScore,
+                FieldScores = FormatFieldScores(pair.FieldScores),
+                RunnerUpScore = pair.RunnerUpScore
             });
 
             context.MatchResults.AddRange(batch);
@@ -459,11 +533,22 @@ public class DataService
                 RecordAId = result.RecordAId,
                 RecordBId = result.RecordBId,
                 SimilarityScore = result.SimilarityScore,
+                FieldScores = ParseFieldScores(result.FieldScores),
+                RunnerUpScore = result.RunnerUpScore,
                 DatasetAPreserved = DeserializePreserved(result.RecordA?.PreservedDataJson),
                 DatasetBPreserved = DeserializePreserved(result.RecordB?.PreservedDataJson)
             })
             .ToList();
     }
+
+    private static string? FormatFieldScores(double?[]? scores) => scores is null
+        ? null
+        : string.Join('|', scores.Select(s => s?.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) ?? ""));
+
+    private static double?[]? ParseFieldScores(string? text) => string.IsNullOrEmpty(text)
+        ? null
+        : text.Split('|').Select(part => double.TryParse(part, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var score) ? score : (double?)null).ToArray();
 
     public Task<List<MatchJob>> GetMatchJobsAsync() => _matchJobRepository.GetAllAsync();
 
@@ -488,7 +573,8 @@ public class DataService
         var columnsA = DeserializeColumns(job.DatasetA?.PreservedColumnsJson);
         var columnsB = DeserializeColumns(job.DatasetB?.PreservedColumnsJson);
 
-        await _excelExportService.ExportMatchResultsAsync(outputPath, pairs, columnsA, columnsB);
+        var fieldLabels = SettingsOf(job).Fields.Select(f => f.Label).ToList();
+        await _excelExportService.ExportMatchResultsAsync(outputPath, pairs, columnsA, columnsB, fieldLabels);
     }
 
     // ── Mapping helpers ───────────────────────────────────────────────────
@@ -503,7 +589,8 @@ public class DataService
         PreservedColumns = DeserializeColumns(dataset.PreservedColumnsJson),
         VectorDimensions = dataset.VectorDimensions,
         CreatedAt = dataset.CreatedAt,
-        Encoding = EncodingOf(dataset)
+        Encoding = EncodingOf(dataset),
+        HasFieldVectors = dataset.HasFieldVectors
     };
 
     public static List<string> DeserializeColumns(string? json)

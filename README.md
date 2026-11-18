@@ -28,9 +28,15 @@ are close enough — ranked, reviewable side-by-side, and exportable to Excel.
 - **Store** every row's vector and preserved values in SQL Server, so datasets are imported once
   and matched many times — or **write the vectors to another spreadsheet** instead, with no database
   involved, and **load that workbook into the database** later without vectorizing again.
-- **Match** two datasets at a similarity threshold you control, with live progress.
+- **Clean up** values by field type before vectorizing (people's and company names, addresses, dates,
+  phones, ZIP codes, ID numbers), so Bob and Robert, or 3/4/1980 and 1980-03-04, encode the same.
+- **Match** two datasets at a similarity threshold you control, with live progress: on the whole row, or
+  **field by field** with weights and must-match fields; every pair, or **one match per record**; every
+  record against every other, or only the candidates **blocking** picks (the same value in a key field,
+  or the same LSH bucket).
 - **Review** matched pairs side-by-side in a grid whose columns adapt to whatever each dataset
-  preserved.
+  preserved, with each pair's **field scores** and its **runner-up and gap**, so an ambiguous match
+  stands out.
 - **Export** results to a formatted Excel workbook.
 
 ---
@@ -89,8 +95,9 @@ no restart needed.
   A vectors workbook (see below) is recognised instead, and Step 2 then only asks for a name.
 - *Step 2* — name the dataset, then tick **Vectorize** and/or **Preserve** for each column. Ticking
   Vectorize unticks Preserve (a column can still be both, and the page warns which are). Tick **Sounds
-  alike** on name columns to encode them by how they sound. Enter a **Matching key** (see *Privacy*
-  below). At least one column must be vectorized. Under **Write the vectors to**, keep *The database*
+  alike** on name columns to encode them by how they sound, and pick a **Field type** for columns whose
+  values are written in more than one way (see *Field types* below). Enter a **Matching key** (see
+  *Privacy* below). At least one column must be vectorized. Under **Write the vectors to**, keep *The database*
   (needed for matching) or choose *Another spreadsheet* and pick the `.xlsx` file to write.
 - *Step 3* — watch progress; the summary reports rows ingested and vector dimensions.
 
@@ -102,8 +109,12 @@ needed, and those rows can't be used in a match job):
   one number per dimension. Zeros are written as `0`, so every row is a complete vector. The header row
   and the readable columns are frozen. A `Vectorized Text` column (the readable text each vector was made
   from) goes before `V0` only if you tick *Also write the vectorized text*.
+- `Field Vectors` column — after `V511`: each row's field vectors (one small vector per vectorized
+  column, base64), so a dataset loaded from the workbook can be scored, explained and blocked field by
+  field. It isn't meant to be read or edited; a row whose cell is missing or edited makes the loaded
+  dataset whole-row only.
 - `About` sheet — the dataset name, source file, time, columns, dimensions, method, encoding, the matching
-  key's fingerprint and the sounds-alike columns.
+  key's fingerprint, the sounds-alike columns, and the field types and clean-up version.
 
 Vectors have unit length, so the cosine similarity of two rows is the sum of their products — in Excel,
 `=SUMPRODUCT(Vectors!E2:SV2, Vectors!E3:SV3)` when two columns are preserved (the `About` sheet names the
@@ -149,7 +160,11 @@ come from small enough sets for that.
 - **Plaintext.** Vectorizing doesn't hide a column that is also preserved, so ticking Vectorize unticks
   Preserve and the page lists any column still ticked for both. A vectors workbook leaves out the readable
   `Vectorized Text` column unless asked.
-- **Compatibility.** Without a key or sounds-alike column, the original encoding is used, so datasets
+- **Field vectors.** Each record also keeps one small vector per vectorized column, made the same way
+  (keyed when there's a key). A single field is easier to guess than a whole row, so without a key a
+  dataset's field vectors give away its dates of birth or phone numbers even faster than its row vectors:
+  for identifying data, use a key.
+- **Compatibility.** Without a key, sounds-alike column or field type, the original encoding is used, so datasets
   imported before this still match new ones made the same way. A match job refuses two datasets encoded
   differently (different keys, keyed against plain, or different numbers of sounds-alike columns) and
   says why. The Datasets list shows each one's encoding.
@@ -158,16 +173,74 @@ With a key, the vectors are pseudonymised rather than anonymous: someone holding
 run the guessing attack, and a large set of vectors can leak patterns (common names repeat). Treat the
 passphrase like a password, share it only with whoever vectorizes the other dataset, and choose a long one.
 
+### Field types
+
+A column's **Field type** cleans its values up before they're vectorized, so the same thing written two
+ways gives the same trigrams. *Text (as is)*, the default, changes nothing.
+
+| Field type | What it does | Example |
+|---|---|---|
+| Person's name | Drops titles and suffixes, turns *Last, First* round, maps common nicknames to the formal name (names short for more than one, such as Chris or Alex, are left alone) | `Smith, Bob J. Jr` → `robert j smith` |
+| Company name | `&` to *and*, drops a leading *The* and legal forms at the end (Inc, Corp, LLC, Ltd, GmbH …) | `The Acme Corp., Inc.` → `acme` |
+| Street address | USPS abbreviations for street types, directions, units and ordinals; P.O. Box in any form | `123 North Main Street, Apartment 4` → `123 n main st apt 4` |
+| Date (month first) / (day first) | Any common format, or an Excel serial number, to ISO; the variant settles 03/04 | `March 4, 1980` → `1980-03-04` |
+| Phone number | Digits only, without an extension or a leading US `+1` | `+1 (555) 010-1234 x12` → `5550101234` |
+| ZIP or postal code | A ZIP+4 cut to five digits, a ZIP that lost its leading zero given it back | `02134-1234` and `2134` → `02134` |
+| Code or ID number | Letters and digits only | `900-12-3456` → `900123456` |
+
+Give the other dataset's matching column the same type. The rules are versioned (`clean-1`) and recorded
+with the dataset and in a vectors workbook, and a match job refuses two datasets cleaned by different
+versions or with different field types. A field type uses the keyed encoding (with no key, an empty one),
+so a dataset with field types can't be matched against one imported without them. On the 500-member
+claims sample matched against a messy copy of 400 of them (nicknames, typos, other date and phone
+formats), cleaning raised whole-row recall at 0.80 from 87% to 99.5%, with no false matches.
+
 **2. Import Dataset B** — same flow. Vectorize the *same kinds of columns* you chose for Dataset A,
 so the two are semantically comparable.
 
-**3. New Match Job** — pick the two datasets, set a threshold, run.
+**3. New Match Job** — pick the two datasets, set a threshold, and choose how to compare:
+
+- **Fields.** When both datasets were imported with this version (they have field vectors), each of A's
+  vectorized columns is listed with the B column it's paired with: by name where the names agree,
+  otherwise by position. Change or clear a pairing as needed. Paired fields always explain the score (see
+  *View Results*); they can also:
+  - **Weight** — the field's share of a field-by-field score.
+  - **Must match** — a pair only counts if this field's own score reaches the threshold too; a blank on
+    either side rules the pair out.
+  - **Block** — only compare records with exactly the same value in this field, after clean-up (encoded
+    by sound, the same codes). With several block fields, records that agree on any one of them are
+    compared, so a typo in one is caught by another. Blanks never block together.
+- **Score.** *Whole row* is the cosine of the rows' vectors, as before. *Field by field* is the weighted
+  average of the paired fields' scores, leaving out fields blank on either side, so a long address can't
+  outweigh a wrong name, and a wrong date of birth isn't diluted by everything else.
+- **One match per record.** Keeps each record's best match only: pairs are taken highest score first, and
+  one is dropped if either record is already paired. Without it, one record can match several.
+- **Approximate blocking (LSH).** Hashes the whole-row vectors with random hyperplanes and only compares
+  pairs that share a bucket in one of the hash tables; the tables are sized so that pairs scoring 0.1 below
+  the threshold are caught about 99% of the time. It needs no field vectors, so it works on older datasets
+  too, but it cuts less than field blocking does: rows of the same kind share a lot of trigrams.
+
+On the claims sample above, blocking on date of birth, last name (by sound) or phone compared 1,697 of
+the 200,000 pairs and found the same matches; LSH compared about a third of them. Field-by-field
+scoring, must-match fields, one match per record and blocking need the app's own matcher, so a job using
+any of them runs in the app even on SQL Server 2025. A plain whole-row job that SQL Server compares has no
+runner-up or field score columns; untick *Compare inside SQL Server* to get them.
 
 **4. View Results** — pairs are listed highest-similarity first, with each dataset's preserved
-columns prefixed `A:` and `B:`.
+columns prefixed `A:` and `B:`. Two columns explain each score:
 
-**5. Export Excel** — writes a `Match Results` sheet: a `Similarity` column followed by
-`A_<column>` and `B_<column>` values for every pair.
+- **Runner-up** is the best score either record had with any other record it was compared with (above
+  the threshold or not), and **Gap** is the pair's lead over it. A large gap is a clear match; a small or
+  negative one means one of the records nearly matches, or better matches, someone else. On the claims
+  sample, right pairs averaged a gap of +0.56 and wrong ones −0.37.
+- **≈ field** columns give each paired field's own score, blank where the field is blank on either side,
+  so you can see *why* two records scored as they did.
+
+The header also shows how the job compared records and, with blocking, how many pairs it scored.
+
+**5. Export Excel** — writes a `Match Results` sheet: a `Similarity` column, then `Runner-up`, `Gap` and
+`Score: <field>` columns when the job has them, followed by `A_<column>` and `B_<column>` values for
+every pair.
 
 Datasets and match jobs can be deleted from their list views. A dataset still referenced by a match
 job cannot be deleted — delete the job first.
@@ -239,9 +312,11 @@ against each other, and a job that tries fails with a clear message rather than 
 
 ### Matching
 
-Because vectors are L2-normalized, cosine similarity reduces to a dot product. A match job compares
-**every** record in A against every record in B (`Parallel.For` over A, SIMD dot product inner loop)
-and keeps pairs at or above the threshold, sorted highest first.
+Because vectors are L2-normalized, cosine similarity reduces to a dot product. Without blocking a match
+job compares **every** record in A against every record in B (`Parallel.For` over A, SIMD dot product
+inner loop); with it, only the candidates the block fields and LSH tables give each A record. It keeps
+pairs at or above the threshold, sorted highest first, noting each record's two best partners along the
+way so every pair gets its runner-up. Field scores are dot products of the records' sparse field vectors.
 
 Scores run 0.0 (nothing in common) to 1.0 (identical normalized text). Picking a threshold:
 
@@ -254,7 +329,9 @@ Scores run 0.0 (nothing in common) to 1.0 (identical normalized text). Picking a
 | `< 0.55` | Expect false positives. |
 
 **The 0.85 default is stricter than it looks.** Start there, then lower it until recall matches your
-data. Matching is O(A × B) — two 10,000-row datasets is 100 million comparisons.
+data. Without blocking matching is O(A × B) — two 10,000-row datasets is 100 million comparisons.
+Field-by-field scores run differently from whole-row ones (a typo costs its field more), so set the
+threshold for the scoring you use.
 
 #### Matching inside SQL Server 2025
 
@@ -287,10 +364,10 @@ VectorMatchEngine.UI/       Avalonia MVVM desktop app — views, view models, DI
 
 | Table | Contents |
 |---|---|
-| `Datasets` | One row per imported workbook: name, source file, row count, column selections, dimensions, and how its vectors were made (`Encoding`, `KeyFingerprint`, `SoundsAlikeColumnsJson`). |
-| `DatasetRecords` | One row per spreadsheet row: serialized vector plus preserved values as JSON. |
-| `MatchJobs` | One row per run: the two datasets, threshold, status, match count. |
-| `MatchResults` | One row per matched pair: both record IDs and the similarity score. |
+| `Datasets` | One row per imported workbook: name, source file, row count, column selections, dimensions, how its vectors were made (`Encoding`, `KeyFingerprint`, `SoundsAlikeColumnsJson`, `Cleanup`, `FieldKindsJson`), and whether its records have field vectors (`HasFieldVectors`). |
+| `DatasetRecords` | One row per spreadsheet row: serialized vector, field vectors (`FieldVectorData`: per field a count, then index and value pairs; null for older records) and preserved values as JSON. |
+| `MatchJobs` | One row per run: the two datasets, threshold, status, match count, its settings as JSON (`SettingsJson`: paired fields, scoring, one per record, blocking) and the pairs it scored (`PairsCompared`). |
+| `MatchResults` | One row per matched pair: both record IDs, the score, the runner-up score and the field scores (`\|`-separated, in the job's field order). |
 | `DatasetRecordVectors` | SQL Server 2025 / Azure SQL only: each record's vector as `VECTOR(512)`, for matching inside the server. Created and filled at run time, not by a migration, because older servers can't create the column. Its rows go when their record does. |
 
 Deleting a dataset cascades to its records; deleting a match job cascades to its results. References
@@ -374,11 +451,13 @@ DI, and the full Excel → vectorize → match → export path round-trips corre
 
 Known limitations:
 
-- Matching is O(A × B) with no blocking or indexing strategy, so very large dataset pairs are slow.
+- Without blocking, matching is O(A × B), so very large dataset pairs are slow; LSH alone cuts the pairs
+  compared by about a third on rows of the same kind, block fields by far more.
+- One match per record is greedy (best score first), not an optimal assignment.
 - Hash collisions are possible by design; raising `NumberOfBits` reduces them at the cost of storage
   and match time.
-- The SQL Server persistence path has not yet been exercised against a live server in this
-  repository — the schema and migration are sound, but first run against your own instance is the
-  proving step.
+- The SQL Server persistence path has been exercised against Azure SQL Edge (SQL Server engine, no
+  `VECTOR` type): migrating an older database, importing, loading a vectors workbook, matching with every
+  option and exporting.
 - Matching inside SQL Server 2025 (`SqlVectorStore`) builds clean but has not yet been run against a
   SQL Server 2025 or Azure SQL instance.

@@ -141,7 +141,8 @@ public class VectorizationService
     // ── The keyed encoding ────────────────────────────────────────────────
 
     /// <summary>
-    /// <see cref="VectorEncoding.Keyed"/>: the spelled columns' text, normalized like the ML.NET pipeline (lower case,
+    /// <see cref="VectorEncoding.Keyed"/>: each column's value cleaned up by its field type (<see cref="FieldCleaner"/>),
+    /// then the spelled columns' text, normalized like the ML.NET pipeline (lower case,
     /// no accents or punctuation), as marker-wrapped character trigrams; each sounds-alike column's words as the
     /// trigrams of their Metaphone codes; every trigram hashed with HMAC-SHA256 under the key (an empty key without
     /// one) into the 2^<see cref="NumberOfBits"/> buckets; then counted and L2-normalized.
@@ -149,46 +150,113 @@ public class VectorizationService
     private static List<float[]> VectorizeKeyed(
         List<Dictionary<string, string>> rows, List<string> vectorizedColumns, VectorizeOptions options)
     {
-        var key = options.Key?.Bytes ?? Array.Empty<byte>();
+        var hasher = new KeyedHasher(options.Key?.Bytes ?? Array.Empty<byte>());
         var spelled = vectorizedColumns.Where(c => !options.SoundsAlikeColumns.Contains(c)).ToList();
         var sounded = vectorizedColumns.Where(c => options.SoundsAlikeColumns.Contains(c)).ToList();
-        var buckets = new Dictionary<string, int>(StringComparer.Ordinal);
-        int Bucket(string feature)
-        {
-            if (!buckets.TryGetValue(feature, out var bucket))
-            {
-                var hash = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(feature));
-                bucket = (int)(BinaryPrimitives.ReadUInt32LittleEndian(hash) % VectorDimensions);
-                buckets[feature] = bucket;
-            }
-            return bucket;
-        }
 
         var result = new List<float[]>(rows.Count);
         foreach (var row in rows)
         {
             var vector = new float[VectorDimensions];
-            foreach (var gram in Trigrams(NormalizeForKeyed(BuildCombinedText(row, spelled))))
-                vector[Bucket("t|" + gram)]++;
-            // A code is shorter than its word (JN for John), so its trigrams are weighted to carry about the share
-            // of the vector a word's own would (a word is typically its code's length plus two). The weight depends
-            // on the code alone, so names that sound alike are encoded identically.
+            var cleaned = options.CleanedKinds.Count > 0 ? CleanRow(row, vectorizedColumns, options) : row;
+            foreach (var gram in Trigrams(NormalizeForKeyed(BuildCombinedText(cleaned, spelled))))
+                vector[hasher.Bucket("t|" + gram)]++;
             foreach (var column in sounded)
-                foreach (var code in SoundCodes(row.GetValueOrDefault(column, string.Empty)))
-                {
-                    var grams = Trigrams(code).ToList();
-                    float weight = (float)Math.Sqrt((code.Length + 2.0) / grams.Count);
-                    foreach (var gram in grams)
-                        vector[Bucket("p|" + gram)] += weight;
-                }
-
-            double length = Math.Sqrt(vector.Sum(x => (double)x * x));
-            if (length > 0)
-                for (int d = 0; d < vector.Length; d++)
-                    vector[d] = (float)(vector[d] / length);
+                AddSoundCodes(vector, hasher, cleaned.GetValueOrDefault(column, string.Empty));
+            NormalizeInPlace(vector);
             result.Add(vector);
         }
         return result;
+    }
+
+    /// <summary>
+    /// One vector per vectorized column for every row, in <paramref name="vectorizedColumns"/>' order: the column's
+    /// value alone, encoded as the keyed encoding encodes it (cleaned up by its field type, spelled or by sound,
+    /// HMAC-SHA256 under the matching key, or an empty key without one), L2-normalized. Match jobs score these field
+    /// by field, explain scores with them and block on them. They're made for every encoding, the original one too,
+    /// so that any two datasets with the same key and settings have comparable fields.
+    /// </summary>
+    public List<SparseVector[]> VectorizeFields(
+        List<Dictionary<string, string>> rows, List<string> vectorizedColumns, VectorizeOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        ArgumentNullException.ThrowIfNull(vectorizedColumns);
+        options ??= VectorizeOptions.None;
+        var hasher = new KeyedHasher(options.Key?.Bytes ?? Array.Empty<byte>());
+        var soundsAlike = vectorizedColumns.Select(c => options.SoundsAlikeColumns.Contains(c)).ToArray();
+
+        var result = new List<SparseVector[]>(rows.Count);
+        var vector = new float[VectorDimensions];
+        foreach (var row in rows)
+        {
+            var fields = new SparseVector[vectorizedColumns.Count];
+            for (int f = 0; f < fields.Length; f++)
+            {
+                var column = vectorizedColumns[f];
+                var value = FieldCleaner.Clean(options.KindOf(column), row.GetValueOrDefault(column, string.Empty));
+                Array.Clear(vector);
+                if (soundsAlike[f])
+                    AddSoundCodes(vector, hasher, value);
+                else
+                    foreach (var gram in Trigrams(NormalizeForKeyed(value)))
+                        vector[hasher.Bucket("t|" + gram)]++;
+                NormalizeInPlace(vector);
+                fields[f] = SparseVector.FromDense(vector);
+            }
+            result.Add(fields);
+        }
+        return result;
+    }
+
+    /// <summary>A copy of the row's vectorized columns, each cleaned up by its field type.</summary>
+    private static Dictionary<string, string> CleanRow(
+        Dictionary<string, string> row, List<string> vectorizedColumns, VectorizeOptions options)
+    {
+        var cleaned = new Dictionary<string, string>(vectorizedColumns.Count, StringComparer.Ordinal);
+        foreach (var column in vectorizedColumns)
+            cleaned[column] = FieldCleaner.Clean(options.KindOf(column), row.GetValueOrDefault(column, string.Empty));
+        return cleaned;
+    }
+
+    /// <summary>
+    /// Adds a sounds-alike value's codes. A code is shorter than its word (JN for John), so its trigrams are weighted
+    /// to carry about the share of the vector a word's own would (a word is typically its code's length plus two).
+    /// The weight depends on the code alone, so names that sound alike are encoded identically.
+    /// </summary>
+    private static void AddSoundCodes(float[] vector, KeyedHasher hasher, string value)
+    {
+        foreach (var code in SoundCodes(value))
+        {
+            var grams = Trigrams(code).ToList();
+            float weight = (float)Math.Sqrt((code.Length + 2.0) / grams.Count);
+            foreach (var gram in grams)
+                vector[hasher.Bucket("p|" + gram)] += weight;
+        }
+    }
+
+    private static void NormalizeInPlace(float[] vector)
+    {
+        double length = Math.Sqrt(vector.Sum(x => (double)x * x));
+        if (length > 0)
+            for (int d = 0; d < vector.Length; d++)
+                vector[d] = (float)(vector[d] / length);
+    }
+
+    /// <summary>A feature's bucket: the first four bytes of its HMAC-SHA256 under the key, mod the vector size.</summary>
+    private sealed class KeyedHasher(byte[] key)
+    {
+        private readonly Dictionary<string, int> _buckets = new(StringComparer.Ordinal);
+
+        public int Bucket(string feature)
+        {
+            if (!_buckets.TryGetValue(feature, out var bucket))
+            {
+                var hash = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(feature));
+                bucket = (int)(BinaryPrimitives.ReadUInt32LittleEndian(hash) % VectorDimensions);
+                _buckets[feature] = bucket;
+            }
+            return bucket;
+        }
     }
 
     /// <summary>A sounds-alike column's words as Metaphone codes (a word with no letters, such as a number, as itself).</summary>
@@ -237,6 +305,8 @@ public class VectorizationService
     /// </summary>
     public static string DescribeInput(Dictionary<string, string> row, List<string> vectorizedColumns, VectorizeOptions? options)
     {
+        if (options is { CleanedKinds.Count: > 0 })
+            row = CleanRow(row, vectorizedColumns, options);
         if (options is null || options.SoundsAlikeColumns.Count == 0)
             return BuildCombinedText(row, vectorizedColumns);
         var parts = vectorizedColumns.Select(c => options.SoundsAlikeColumns.Contains(c)

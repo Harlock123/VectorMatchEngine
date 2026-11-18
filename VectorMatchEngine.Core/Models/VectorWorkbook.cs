@@ -22,4 +22,5 @@ public sealed record VectorWorkbookInfo(
 public sealed record VectorWorkbook(
     VectorWorkbookInfo Info,
     List<Dictionary<string, string>> Preserved,
-    List<float[]> Vectors);
+    List<float[]> Vectors,
+    List<SparseVector[]>? FieldVectors = null);

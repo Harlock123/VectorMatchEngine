@@ -7,10 +7,12 @@
 
     <StackPanel Grid.Row="0" Spacing="4" Margin="0,8,0,20">
       <TextBlock Classes="h1" Text="New Match Job"/>
-      <TextBlock Classes="subtle" Text="Compare every record in Dataset A against every record in Dataset B."/>
+      <TextBlock Classes="subtle" TextWrapping="Wrap"
+                 Text="Compare Dataset A's records with Dataset B's: every pair, or only the candidates blocking picks, scored on the whole row or field by field."/>
     </StackPanel>
 
-    <Border Grid.Row="1" Classes="card" VerticalAlignment="Top" MaxWidth="820" HorizontalAlignment="Left">
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+    <Border Classes="card" VerticalAlignment="Top" MaxWidth="980" HorizontalAlignment="Left">
       <StackPanel Spacing="18">
 
         <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto" VerticalAlignment="Center">
@@ -56,7 +58,60 @@
             </Border>
           </Grid>
           <TextBlock Classes="subtle" TextWrapping="Wrap"
-                     Text="Only pairs whose cosine similarity is at or above this value are recorded. Lower it if you expect spelling variations."/>
+                     Text="Only pairs whose score (the rows' cosine similarity, or the field-by-field average) is at or above this value are recorded. Lower it if you expect spelling variations."/>
+        </StackPanel>
+
+        <StackPanel Spacing="8">
+          <TextBlock Classes="body" Text="Fields"/>
+          <TextBlock Classes="subtle" TextWrapping="Wrap" IsVisible="{Binding ShowFieldsNote}" Text="{Binding FieldsNote}"/>
+          <StackPanel Spacing="8" IsVisible="{Binding FieldsAvailable}">
+            <TextBlock Classes="subtle" TextWrapping="Wrap"
+                       Text="Pair each of A's vectorized columns with the B column holding the same thing. Each pair's field scores are shown next to it in the results. Weight: the field's share of a field-by-field score. Must match: a pair only counts if this field scores at least the threshold too (a blank rules it out). Block: only compare records with exactly the same value here, after clean-up; with several block fields, records that agree on any of them are compared."/>
+            <Grid ColumnDefinitions="200,240,110,100,80" Margin="0,4,0,0">
+              <TextBlock Grid.Column="0" Classes="subtle" FontWeight="Bold" Text="Dataset A column"/>
+              <TextBlock Grid.Column="1" Classes="subtle" FontWeight="Bold" Text="Dataset B column"/>
+              <TextBlock Grid.Column="2" Classes="subtle" FontWeight="Bold" Text="Weight"/>
+              <TextBlock Grid.Column="3" Classes="subtle" FontWeight="Bold" Text="Must match"/>
+              <TextBlock Grid.Column="4" Classes="subtle" FontWeight="Bold" Text="Block"/>
+            </Grid>
+            <ItemsControl ItemsSource="{Binding FieldRows}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:FieldPairItem">
+                  <Grid ColumnDefinitions="200,240,110,100,80" Margin="0,2">
+                    <TextBlock Grid.Column="0" Classes="body" Text="{Binding NameA}" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding OptionsB}" Margin="0,0,10,0"
+                              SelectedIndex="{Binding SelectedIndexB, Mode=TwoWay}" HorizontalAlignment="Stretch"/>
+                    <NumericUpDown Grid.Column="2" Value="{Binding Weight, Mode=TwoWay}" Minimum="0" Maximum="100"
+                                   Increment="0.5" FormatString="0.##" Margin="0,0,10,0"
+                                   IsEnabled="{Binding IsPaired}"/>
+                    <CheckBox Grid.Column="3" IsChecked="{Binding MustMatch, Mode=TwoWay}" IsEnabled="{Binding IsPaired}"/>
+                    <CheckBox Grid.Column="4" IsChecked="{Binding Block, Mode=TwoWay}" IsEnabled="{Binding IsPaired}"/>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Classes="body" Text="Score" Margin="0,6,0,0"/>
+            <StackPanel Spacing="4">
+              <RadioButton Content="Whole row: the cosine of the rows' vectors (the paired fields only explain it)"
+                           IsChecked="{Binding ScoreWholeRow, Mode=TwoWay}"/>
+              <RadioButton Content="Field by field: the weighted average of the paired fields' scores (blank fields left out)"
+                           IsChecked="{Binding ScoreByField, Mode=TwoWay}"/>
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+          <TextBlock Classes="body" Text="Pairs"/>
+          <CheckBox IsChecked="{Binding OneToOne, Mode=TwoWay}">
+            <TextBlock TextWrapping="Wrap" Text="One match per record: keep each record's best match only (highest scores first), so no record is in two pairs"/>
+          </CheckBox>
+          <CheckBox IsChecked="{Binding ApproximateBlocking, Mode=TwoWay}">
+            <TextBlock TextWrapping="Wrap" Text="Approximate blocking (LSH): only compare rows whose vectors hash to the same bucket; much faster on large datasets, and catches about 99% of pairs scoring 0.1 below the threshold or more"/>
+          </CheckBox>
+          <TextBlock Classes="subtle" TextWrapping="Wrap"
+                     Text="Every pair in the results shows its runner-up (the best score either record had with anyone else) and its gap to it: a small or negative gap means an ambiguous match."/>
         </StackPanel>
 
         <StackPanel Spacing="4">
@@ -86,6 +141,7 @@
         <TextBlock Classes="error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}"/>
       </StackPanel>
     </Border>
+    </ScrollViewer>
 
     <Button Grid.Row="2" Classes="secondary" Content="&#x2190;  Home"
             HorizontalAlignment="Left" Command="{Binding GoHomeCommand}"/>

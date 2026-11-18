@@ -22,10 +22,13 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Dataset>().Property(d => d.Encoding).HasMaxLength(32);
         modelBuilder.Entity<Dataset>().Property(d => d.KeyFingerprint).HasMaxLength(32);
         modelBuilder.Entity<Dataset>().Property(d => d.SoundsAlikeColumnsJson).HasColumnType("NVARCHAR(MAX)");
+        modelBuilder.Entity<Dataset>().Property(d => d.Cleanup).HasMaxLength(32);
+        modelBuilder.Entity<Dataset>().Property(d => d.FieldKindsJson).HasColumnType("NVARCHAR(MAX)");
 
         // ── DatasetRecord ────────────────────────────────────────────────
         modelBuilder.Entity<DatasetRecord>().Property(r => r.VectorData).HasColumnType("VARBINARY(MAX)");
         modelBuilder.Entity<DatasetRecord>().Property(r => r.PreservedDataJson).HasColumnType("NVARCHAR(MAX)");
+        modelBuilder.Entity<DatasetRecord>().Property(r => r.FieldVectorData).HasColumnType("VARBINARY(MAX)");
 
         // Deleting a dataset removes its records.
         modelBuilder.Entity<DatasetRecord>()
@@ -36,6 +39,8 @@ public class AppDbContext : DbContext
 
         // ── MatchJob ─────────────────────────────────────────────────────
         modelBuilder.Entity<MatchJob>().Property(j => j.Status).HasMaxLength(50);
+        modelBuilder.Entity<MatchJob>().Property(j => j.SettingsJson).HasColumnType("NVARCHAR(MAX)");
+        modelBuilder.Entity<MatchResult>().Property(r => r.FieldScores).HasMaxLength(1000);
 
         // Restrict, not Cascade: two FKs into Datasets would otherwise create multiple
         // cascade paths, which SQL Server rejects outright. Restricting also enforces the

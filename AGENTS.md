@@ -20,7 +20,7 @@ dotnet ef migrations add <Name> --project VectorMatchEngine.Data --startup-proje
 dotnet restore -p:ContinuousIntegrationBuild=true    # fails if the packages drifted from the lock files
 ```
 
-- There are no tests yet.
+- There are no tests in the repository yet.
 - `VECTORMATCH_CONNECTION` overrides the placeholder connection string that `DesignTimeDbContextFactory` gives
   `dotnet ef`. The app itself reads its connection string from its settings file.
 
@@ -36,10 +36,18 @@ dotnet restore -p:ContinuousIntegrationBuild=true    # fails if the packages dri
     refuses vectors whose size or the About sheet's `Method` (`VectorSheetExportService.MethodDescription`)
     differ from this version's; keep that string in step with the vectorizer.
   - `Services/VectorizationService.cs`: the ML.NET trigram pipeline; `NumberOfBits` sets the vector size. With
-    `VectorizeOptions` (a matching key, sounds-alike columns) it runs the keyed encoding instead.
+    `VectorizeOptions` (a matching key, sounds-alike columns, field types) it runs the keyed encoding instead.
+    `VectorizeFields` makes each record's field vectors (one sparse vector per vectorized column, always keyed
+    hashing, an empty key without one), for scoring, explaining and blocking by field.
+  - `Services/FieldCleaner.cs`: the clean-up rules per `Models/FieldKind.cs` (names, companies, addresses,
+    dates, phones, postal codes, codes), versioned by `FieldCleaner.Version`.
+  - `Models/SparseVector.cs`: sparse field vectors and `FieldVectorCodec`, their byte format (database) and
+    base64 (the vectors workbook's `Field Vectors` column).
   - `Services/VectorKey.cs` (passphrase → key and fingerprint) and `Services/Metaphone.cs` (sounds-alike codes);
     `Models/VectorEncoding.cs` describes an encoding and when two can be matched.
-  - `Services/SimilarityService.cs`: the all-pairs dot-product comparison.
+  - `Services/SimilarityService.cs`: the matcher. Scores whole rows or field by field (`Models/MatchSettings.cs`),
+    applies must-match fields, tracks each record's two best partners for the runner-up, keeps one match per
+    record greedily, and blocks on exact field vectors or random-hyperplane LSH.
   - `Models/`: plain request and result types.
 - `VectorMatchEngine.Data/`: EF Core.
   - `AppDbContext.cs`, `Entities/`, `Migrations/`, and `Repositories/` (datasets and match jobs).
@@ -70,7 +78,18 @@ dotnet restore -p:ContinuousIntegrationBuild=true    # fails if the packages dri
   of either encoding (normalization, the trigram markers, the HMAC feature prefixes `t|`/`p|`, the Metaphone rules,
   the code weighting, the PBKDF2 salt or rounds) makes existing keyed datasets and vectors workbooks unmatchable,
   so it needs a new encoding name rather than a silent change. Keep `VectorSheetExportService.MethodDescription`
-  in step.
+  in step. The same goes for `FieldCleaner`: any change to its rules or tables needs a new
+  `FieldCleaner.Version` (and `IsKnownVersion` updated), since datasets record the version they were
+  cleaned with and two are only matched if it agrees. A dataset with no field types must vectorize exactly as
+  before: keyed vectors without field types are byte-for-byte what the previous version made.
+- **Field vectors line up with `VectorizedColumnsJson`.** Field `i` of a record is the dataset's `i`-th
+  vectorized column; `MatchSettings.Fields` pair columns by name, and `DataService.CheckEncodingsMatchAsync`
+  sets their indices and refuses pairs encoded differently (one by sound, or different field types). Datasets
+  from before field vectors have `HasFieldVectors` false and match whole-row only.
+- **Settings that need the app's matcher skip SQL Server.** `MatchSettings.NeedsAppMatching` (field-by-field
+  scoring, must-match fields, one per record, blocking) sends a job to `SimilarityService` even when the server
+  has `VECTOR`; `SqlVectorStore` only does the plain whole-row, every-pair job, and leaves the runner-up and
+  field scores empty (paired fields that only explain don't stop it).
 - **Never store the matching key.** Only `VectorKey.Fingerprint` goes into the database or a workbook.
 - **Repositories take `IDbContextFactory`, not `AppDbContext`.** They are singletons, so they create a context per
   call; this is also what lets a new connection string apply without a restart.

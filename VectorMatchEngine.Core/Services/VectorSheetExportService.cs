@@ -21,6 +21,9 @@ public class VectorSheetExportService
     public const string VectorsSheetName = "Vectors";
     public const string AboutSheetName = "About";
 
+    /// <summary>The column after the vectors holding each row's field vectors (FieldVectorCodec, in base64).</summary>
+    public const string FieldVectorsHeader = "Field Vectors";
+
     /// <summary>Excel's limits: 1,048,576 rows (one is the header), 16,384 columns, 32,767 characters a cell.</summary>
     private const int MaxDataRows = 1_048_575;
     private const int MaxColumns = 16_384;
@@ -33,10 +36,13 @@ public class VectorSheetExportService
     /// The About sheet's Method line for an encoding. Loading a vectors workbook back checks it, since vectors made
     /// another way (a different n-gram length or hash size) can't be compared with this version's.
     /// </summary>
-    public static string MethodDescription(string encodingMethod) => encodingMethod == VectorEncoding.Plain
-        ? $"Character {VectorizationService.NgramLength}-grams hashed into 2^{VectorizationService.NumberOfBits} buckets, L2-normalized"
-        : $"Character {VectorizationService.NgramLength}-grams and sounds-alike (Metaphone) codes, hashed with HMAC-SHA256 " +
-          $"under the matching key into 2^{VectorizationService.NumberOfBits} buckets, L2-normalized";
+    public static string MethodDescription(string encodingMethod, string? cleanup = null) =>
+        (encodingMethod == VectorEncoding.Plain
+            ? $"Character {VectorizationService.NgramLength}-grams hashed into 2^{VectorizationService.NumberOfBits} buckets, L2-normalized"
+            : $"Character {VectorizationService.NgramLength}-grams and sounds-alike (Metaphone) codes, hashed with HMAC-SHA256 " +
+              $"under the matching key into 2^{VectorizationService.NumberOfBits} buckets, L2-normalized")
+        // Cleaned-up values make different vectors, so a version that doesn't know the rules must refuse them.
+        + (string.IsNullOrEmpty(cleanup) ? "" : $", values cleaned up by field type ({cleanup})");
 
     /// <summary>The bold style's index in the stylesheet this writes.</summary>
     private const int BoldStyle = 1;
@@ -51,7 +57,8 @@ public class VectorSheetExportService
         List<string> preservedColumns,
         IProgress<(int current, int total, string message)>? progress = null,
         VectorizeOptions? options = null,
-        bool includeVectorizedText = false) => Task.Run(() =>
+        bool includeVectorizedText = false,
+        List<SparseVector[]>? fieldVectors = null) => Task.Run(() =>
     {
         if (string.IsNullOrWhiteSpace(outputPath))
             throw new ArgumentException("No output path was supplied.", nameof(outputPath));
@@ -60,6 +67,8 @@ public class VectorSheetExportService
         ArgumentNullException.ThrowIfNull(vectorizedColumns);
         if (rows.Count != vectors.Count)
             throw new ArgumentException($"{rows.Count} rows but {vectors.Count} vectors.", nameof(vectors));
+        if (fieldVectors is not null && fieldVectors.Count != rows.Count)
+            throw new ArgumentException($"{rows.Count} rows but {fieldVectors.Count} field vectors.", nameof(fieldVectors));
         if (!string.IsNullOrWhiteSpace(sourceFilePath)
             && string.Equals(Path.GetFullPath(outputPath), Path.GetFullPath(sourceFilePath),
                 OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
@@ -72,7 +81,7 @@ public class VectorSheetExportService
         // 1-based: Row, the preserved columns, the text if asked for, then the vectors.
         int textColumn = includeVectorizedText ? 2 + preservedColumns.Count : 0;
         int firstVectorColumn = 2 + preservedColumns.Count + (includeVectorizedText ? 1 : 0);
-        int lastColumn = firstVectorColumn + dimensions - 1;
+        int lastColumn = firstVectorColumn + dimensions - 1 + (fieldVectors is null ? 0 : 1);
         if (rows.Count > MaxDataRows)
             throw new InvalidOperationException($"{rows.Count:N0} rows is more than a worksheet holds ({MaxDataRows:N0}).");
         if (lastColumn > MaxColumns)
@@ -95,10 +104,11 @@ public class VectorSheetExportService
                 WriteText(zip, "xl/_rels/workbook.xml.rels", WorkbookRelationships);
                 WriteText(zip, "xl/styles.xml", Styles);
                 WriteXml(zip, "xl/worksheets/sheet1.xml", writer => WriteVectors(writer, rows, vectors,
-                    vectorizedColumns, preservedColumns, dimensions, textColumn, firstVectorColumn, options, progress));
+                    vectorizedColumns, preservedColumns, dimensions, textColumn, firstVectorColumn, options, progress,
+                    fieldVectors));
                 WriteXml(zip, "xl/worksheets/sheet2.xml", writer => WriteAbout(writer, datasetName, sourceFilePath,
                     rows.Count, dimensions, vectorizedColumns, preservedColumns, firstVectorColumn, encoding,
-                    includeVectorizedText));
+                    includeVectorizedText, fieldVectors is not null));
                 progress?.Report((rows.Count, rows.Count, "Saving the spreadsheet..."));
             }
             File.Move(temporary, outputPath, overwrite: true);
@@ -115,7 +125,7 @@ public class VectorSheetExportService
     private static void WriteVectors(
         XmlWriter w, List<Dictionary<string, string>> rows, List<float[]> vectors, List<string> vectorizedColumns,
         List<string> preservedColumns, int dimensions, int textColumn, int firstVectorColumn, VectorizeOptions options,
-        IProgress<(int current, int total, string message)>? progress)
+        IProgress<(int current, int total, string message)>? progress, List<SparseVector[]>? fieldVectors)
     {
         bool withText = textColumn > 0;
         var texts = withText
@@ -158,6 +168,8 @@ public class VectorSheetExportService
             TextCell(w, "Vectorized Text", BoldStyle);
         for (int d = 0; d < dimensions; d++)
             TextCell(w, $"V{d}", BoldStyle);
+        if (fieldVectors is not null)
+            TextCell(w, FieldVectorsHeader, BoldStyle);
         w.WriteEndElement();
 
         // Zeros are written as 0, not left blank, so every reader sees a complete vector.
@@ -176,6 +188,8 @@ public class VectorSheetExportService
             var vector = vectors[r];
             for (int d = 0; d < dimensions; d++)
                 NumberCell(w, d < vector.Length && vector[d] != 0 ? vector[d].ToString("R", CultureInfo.InvariantCulture) : "0");
+            if (fieldVectors is not null)
+                TextCell(w, FieldVectorCodec.ToBase64(fieldVectors[r]));
             w.WriteEndElement();
         }
 
@@ -186,7 +200,7 @@ public class VectorSheetExportService
     private static void WriteAbout(
         XmlWriter w, string datasetName, string sourceFilePath, int rowCount, int dimensions,
         List<string> vectorizedColumns, List<string> preservedColumns, int firstVectorColumn, VectorEncoding encoding,
-        bool includesText)
+        bool includesText, bool includesFieldVectors)
     {
         var lines = new (string Label, string Value)[]
         {
@@ -198,10 +212,16 @@ public class VectorSheetExportService
             ("Preserved columns", string.Join(", ", preservedColumns)),
             ("Vector dimensions", dimensions.ToString(CultureInfo.InvariantCulture)),
             ("Vector columns", $"V0 to V{dimensions - 1}, starting at column {ColumnName(firstVectorColumn)} of the {VectorsSheetName} sheet"),
-            ("Method", MethodDescription(encoding.Method)),
+            ("Method", MethodDescription(encoding.Method, encoding.Cleanup)),
             ("Encoding", encoding.Method),
             ("Key fingerprint", encoding.KeyFingerprint ?? ""),
             ("Sounds-alike columns", string.Join(", ", encoding.SoundsAlikeColumns)),
+            ("Cleanup", encoding.Cleanup ?? ""),
+            ("Field types", encoding.Kinds.Count == 0 ? "" : System.Text.Json.JsonSerializer.Serialize(
+                encoding.Kinds.ToDictionary(k => k.Key, k => k.Value.ToString()))),
+            ("Field vectors", includesFieldVectors
+                ? $"One per vectorized column, in the {FieldVectorsHeader} column after the vectors (for scoring field by field)"
+                : ""),
             ("Similarity", "Vectors have length 1, so the cosine similarity of two rows is the sum of their products (SUMPRODUCT)"),
             ("Privacy", encoding.HasKey
                 ? "Vectorized with a matching key: without it the vectors can't be rebuilt from guesses. Preserved columns" +

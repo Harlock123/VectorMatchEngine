@@ -13,6 +13,9 @@ public class DatasetInfo
     public DateTime CreatedAt { get; set; }
     public VectorEncoding Encoding { get; set; } = VectorEncoding.Original;
 
+    /// <summary>Its records have field vectors, so it can be scored, explained and blocked field by field.</summary>
+    public bool HasFieldVectors { get; set; }
+
     public string VectorizedColumnsDisplay => string.Join(", ", VectorizedColumns);
     public string PreservedColumnsDisplay => string.Join(", ", PreservedColumns);
     public string EncodingDisplay => Encoding.Display;

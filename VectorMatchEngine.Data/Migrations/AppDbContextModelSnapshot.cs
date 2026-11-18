@@ -30,6 +30,10 @@ namespace VectorMatchEngine.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Cleanup")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -38,10 +42,17 @@ namespace VectorMatchEngine.Data.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<string>("FieldKindsJson")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR(MAX)");
+
                     b.Property<string>("FileName")
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
+
+                    b.Property<bool>("HasFieldVectors")
+                        .HasColumnType("bit");
 
                     b.Property<string>("KeyFingerprint")
                         .HasMaxLength(32)
@@ -86,6 +97,9 @@ namespace VectorMatchEngine.Data.Migrations
                     b.Property<int>("DatasetId")
                         .HasColumnType("int");
 
+                    b.Property<byte[]>("FieldVectorData")
+                        .HasColumnType("VARBINARY(MAX)");
+
                     b.Property<string>("PreservedDataJson")
                         .IsRequired()
                         .HasColumnType("NVARCHAR(MAX)");
@@ -127,6 +141,12 @@ namespace VectorMatchEngine.Data.Migrations
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<long?>("PairsCompared")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SettingsJson")
+                        .HasColumnType("NVARCHAR(MAX)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -155,6 +175,10 @@ namespace VectorMatchEngine.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<string>("FieldScores")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<int>("MatchJobId")
                         .HasColumnType("int");
 
@@ -163,6 +187,9 @@ namespace VectorMatchEngine.Data.Migrations
 
                     b.Property<long>("RecordBId")
                         .HasColumnType("bigint");
+
+                    b.Property<double?>("RunnerUpScore")
+                        .HasColumnType("float");
 
                     b.Property<double>("SimilarityScore")
                         .HasColumnType("float");

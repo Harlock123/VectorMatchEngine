@@ -32,6 +32,7 @@ public class MatchJobRepository : IMatchJobRepository
         tracked.ErrorMessage = job.ErrorMessage;
         tracked.CompletedAt = job.CompletedAt;
         tracked.Threshold = job.Threshold;
+        tracked.PairsCompared = job.PairsCompared;
 
         await context.SaveChangesAsync();
     }

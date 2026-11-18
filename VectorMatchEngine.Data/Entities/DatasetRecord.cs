@@ -11,4 +11,7 @@ public class DatasetRecord
     public int RowIndex { get; set; }
     public byte[] VectorData { get; set; } = Array.Empty<byte>(); // VARBINARY(MAX) - serialized float[]
     public string PreservedDataJson { get; set; } = "{}";          // NVARCHAR(MAX) - JSON object
+
+    /// <summary>One sparse vector per vectorized column (FieldVectorCodec); null for records from before field vectors.</summary>
+    public byte[]? FieldVectorData { get; set; }                   // VARBINARY(MAX)
 }

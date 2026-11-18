@@ -64,7 +64,9 @@ public partial class MatchResultsView : UserControl
                 {
                     Header = column.Header,
                     Binding = new Binding(column.Key) { StringFormat = "0.0000" },
-                    Width = new DataGridLength(90)
+                    Width = column.Key == "Similarity" || column.Key == "Gap" || column.Key == "RunnerUp"
+                        ? new DataGridLength(112)
+                        : new DataGridLength(120)
                 });
             }
             else

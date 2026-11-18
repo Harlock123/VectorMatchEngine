@@ -48,7 +48,7 @@
                        Text="Its vectors are loaded into the database as they are, without vectorizing again, so it can be used in match jobs like any imported dataset."/>
           </StackPanel>
           <TextBlock Classes="subtle" TextWrapping="Wrap" IsVisible="{Binding IsColumnWorkbook}"
-                     Text="Vectorize: the column's text is embedded into the similarity vector. Preserve: the value is stored verbatim so it can be shown and exported (ticking Vectorize unticks it; a column can still be both). Sounds alike: names are encoded by how they sound, so Smith and Smyth, or Jon and John, count as the same."/>
+                     Text="Vectorize: the column's text is embedded into the similarity vector. Preserve: the value is stored verbatim so it can be shown and exported (ticking Vectorize unticks it; a column can still be both). Sounds alike: names are encoded by how they sound, so Smith and Smyth, or Jon and John, count as the same. Field type: cleans the values up before vectorizing, so the same thing written two ways matches (Bob and Robert, Acme Corp. and ACME Corporation, 3/4/1980 and 1980-03-04, (555) 010-1234 and 555.010.1234); give the other dataset's column the same type."/>
 
           <StackPanel Spacing="6" IsVisible="{Binding IsColumnWorkbook}">
             <TextBlock Classes="h2" Text="Matching key" Margin="0,6,0,0"/>
@@ -94,6 +94,15 @@
             <DataGridCheckBoxColumn Header="Vectorize" Binding="{Binding IsVectorized, Mode=TwoWay}" Width="120"/>
             <DataGridCheckBoxColumn Header="Preserve"  Binding="{Binding IsPreserved,  Mode=TwoWay}" Width="120"/>
             <DataGridCheckBoxColumn Header="Sounds alike" Binding="{Binding IsSoundsAlike, Mode=TwoWay}" Width="130"/>
+            <DataGridTemplateColumn Header="Field type" Width="190">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate x:DataType="vm:ColumnSelectionItem">
+                  <ComboBox ItemsSource="{x:Static vm:ColumnSelectionItem.KindLabels}"
+                            SelectedIndex="{Binding KindIndex, Mode=TwoWay}"
+                            HorizontalAlignment="Stretch" Margin="4,2"/>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
           </DataGrid.Columns>
         </DataGrid>
       </Border>

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Text.Json;
 using System.Xml;
 using VectorMatchEngine.Core.Models;
 
@@ -58,6 +59,7 @@ public class VectorSheetImportService
         int total = info.RowCount ?? 0;
         var preserved = new List<Dictionary<string, string>>(total);
         var vectors = new List<float[]>(total);
+        var fieldVectors = layout.FieldVectorsColumn >= 0 ? new List<SparseVector[]>(total) : null;
         foreach (var (rowNumber, cells) in package.ReadRows(package.VectorsEntry).Skip(1))
         {
             if (cells.All(string.IsNullOrWhiteSpace))
@@ -89,6 +91,22 @@ public class VectorSheetImportService
                 for (int d = 0; d < vector.Length; d++)
                     vector[d] = (float)(vector[d] / length);
 
+            if (fieldVectors is not null)
+            {
+                SparseVector[]? fields;
+                try { fields = FieldVectorCodec.FromBase64(Cell(cells, layout.FieldVectorsColumn)); }
+                catch (FormatException)
+                {
+                    throw new InvalidOperationException(
+                        $"Row {rowNumber}'s {VectorSheetExportService.FieldVectorsHeader} cell isn't the field vectors this app writes.");
+                }
+                // A row without them (edited by hand) means the workbook can only be matched whole-row.
+                if (fields is null || fields.Length != info.VectorizedColumns.Count)
+                    fieldVectors = null;
+                else
+                    fieldVectors.Add(fields);
+            }
+
             preserved.Add(values);
             vectors.Add(vector);
             if (vectors.Count % 500 == 1)
@@ -98,15 +116,15 @@ public class VectorSheetImportService
 
         if (vectors.Count == 0)
             throw new InvalidOperationException($"The {VectorSheetExportService.VectorsSheetName} sheet has a header row but no data rows.");
-        return new VectorWorkbook(info with { RowCount = vectors.Count }, preserved, vectors);
+        return new VectorWorkbook(info with { RowCount = vectors.Count }, preserved, vectors, fieldVectors);
     });
 
-    private sealed record Layout(List<(string Name, int Column)> PreservedColumns, int FirstVectorColumn);
+    private sealed record Layout(List<(string Name, int Column)> PreservedColumns, int FirstVectorColumn, int FieldVectorsColumn);
 
     /// <summary>Recognises the Vectors sheet's header and reads the About sheet; null if it isn't a vectors header.</summary>
     private static VectorWorkbookInfo? Inspect(Package package, out Layout layout)
     {
-        layout = new Layout(new(), 0);
+        layout = new Layout(new(), 0, -1);
         var header = package.ReadRows(package.VectorsEntry!).FirstOrDefault().Cells;
         if (header is null)
             return null;
@@ -142,7 +160,11 @@ public class VectorSheetImportService
         if (encodingMethod is not (VectorEncoding.Plain or VectorEncoding.Keyed))
             throw new InvalidOperationException(
                 $"This workbook's vectors use an encoding this version doesn't know ({encodingMethod}). Import the source workbook again instead.");
-        var expectedMethod = VectorSheetExportService.MethodDescription(encodingMethod);
+        var cleanup = about.TryGetValue("Cleanup", out var cleanupLine) && cleanupLine.Length > 0 ? cleanupLine : null;
+        if (!FieldCleaner.IsKnownVersion(cleanup))
+            throw new InvalidOperationException(
+                $"This workbook's values were cleaned up by rules this version doesn't know ({cleanup}). Import the source workbook again instead.");
+        var expectedMethod = VectorSheetExportService.MethodDescription(encodingMethod, cleanup);
         if (about.TryGetValue("Method", out var method) && method.Length > 0
             && !string.Equals(method, expectedMethod, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
@@ -167,7 +189,11 @@ public class VectorSheetImportService
             }
             preserved.Add((name, c));
         }
-        layout = new Layout(preserved, firstVector);
+        int fieldVectorsColumn = string.Equals(Cell(header, firstVector + dimensions)?.Trim(),
+            VectorSheetExportService.FieldVectorsHeader, StringComparison.OrdinalIgnoreCase)
+            ? firstVector + dimensions
+            : -1;
+        layout = new Layout(preserved, firstVector, fieldVectorsColumn);
 
         string About(string key) => about.TryGetValue(key, out var v) ? v : string.Empty;
         var vectorized = About("Vectorized columns")
@@ -176,9 +202,24 @@ public class VectorSheetImportService
         var fingerprint = About("Key fingerprint");
         var soundsAlike = About("Sounds-alike columns")
             .Split(", ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        var kinds = new Dictionary<string, FieldKind>();
+        if (About("Field types") is { Length: > 0 } kindsJson)
+        {
+            try
+            {
+                foreach (var (column, name) in JsonSerializer.Deserialize<Dictionary<string, string>>(kindsJson) ?? new())
+                    if (FieldKinds.Parse(name) is { } kind && kind != FieldKind.Text)
+                        kinds[column] = kind;
+            }
+            catch (JsonException)
+            {
+                throw new InvalidOperationException("The About sheet's Field types line isn't the list this app writes.");
+            }
+        }
         var encoding = encodingMethod == VectorEncoding.Plain
             ? VectorEncoding.Original
-            : new VectorEncoding(VectorEncoding.Keyed, fingerprint.Length > 0 ? fingerprint : null, soundsAlike);
+            : new VectorEncoding(VectorEncoding.Keyed, fingerprint.Length > 0 ? fingerprint : null, soundsAlike,
+                cleanup, kinds);
         return new VectorWorkbookInfo(About("Dataset"), About("Source file"), vectorized,
             preserved.Select(p => p.Name).ToList(), dimensions, rows, encoding);
     }

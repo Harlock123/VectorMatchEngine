@@ -290,6 +290,8 @@ public partial class ImportViewModel : ObservableObject
         var filePath = SelectedFilePath;
         var name = DatasetName;
         var soundsAlike = ColumnSelections.Where(c => c.IsVectorized && c.IsSoundsAlike).Select(c => c.Name).ToList();
+        var kinds = ColumnSelections.Where(c => c.IsVectorized && c.Kind != FieldKind.Text)
+            .ToDictionary(c => c.Name, c => c.Kind);
         var passphrase = MatchingKey;
         var includeText = IncludeVectorizedText;
         var toSpreadsheet = WriteToSpreadsheet && !IsVectorWorkbook;
@@ -326,7 +328,7 @@ public partial class ImportViewModel : ObservableObject
             }
             else if (toSpreadsheet)
             {
-                var options = await Task.Run(() => new VectorizeOptions(VectorKey.FromPassphrase(passphrase), soundsAlike));
+                var options = await Task.Run(() => new VectorizeOptions(VectorKey.FromPassphrase(passphrase), soundsAlike, kinds));
                 var rowCount = await Task.Run(() => _dataService.VectorizeToSpreadsheetAsync(
                     filePath, name, vectorized, preserved, outputPath, progress, options, includeText));
 
@@ -337,7 +339,7 @@ public partial class ImportViewModel : ObservableObject
             }
             else
             {
-                var options = await Task.Run(() => new VectorizeOptions(VectorKey.FromPassphrase(passphrase), soundsAlike));
+                var options = await Task.Run(() => new VectorizeOptions(VectorKey.FromPassphrase(passphrase), soundsAlike, kinds));
                 var dataset = await Task.Run(() => _dataService.IngestExcelAsync(
                     filePath, name, vectorized, preserved, progress, options));
 
